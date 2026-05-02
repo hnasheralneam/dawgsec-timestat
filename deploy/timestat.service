@@ -1,0 +1,17 @@
+[Unit]
+Description=TimeStat Gunicorn service
+After=network.target
+
+[Service]
+Type=simple
+User=timestat
+Group=www-data
+WorkingDirectory=/opt/timestat
+EnvironmentFile=/etc/timestat/timestat.env
+ExecStart=/opt/timestat/.venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
