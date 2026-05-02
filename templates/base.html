@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "TimeStat" }}</title>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gb: {
+              bg0: "#f9f5d7",
+              bg1: "#ebdbb2",
+              bg2: "#d5c4a1",
+              fg: "#3c3836",
+              red: "#cc241d",
+              green: "#98971a",
+              yellow: "#d79921",
+              aqua: "#689d6a",
+              blue: "#458588",
+              purple: "#b16286",
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --gb-bg0: #f9f5d7;
+      --gb-bg1: #ebdbb2;
+      --gb-bg2: #d5c4a1;
+      --gb-fg: #3c3836;
+      --gb-shadow: #d0c09f;
+      --gb-highlight: #fff9df;
+    }
+
+    body {
+      background: radial-gradient(circle at top left, #f2e5bc 0%, var(--gb-bg0) 40%, #f4e8c3 100%);
+      color: var(--gb-fg);
+    }
+
+    .neu-surface {
+      background: var(--gb-bg0);
+      border: 1px solid var(--gb-bg2);
+      border-radius: 1.1rem;
+      box-shadow: 10px 10px 22px var(--gb-shadow), -10px -10px 22px var(--gb-highlight);
+    }
+
+    .neu-inset {
+      background: var(--gb-bg1);
+      border: 1px solid var(--gb-bg2);
+      box-shadow: inset 6px 6px 12px #d7c79f, inset -6px -6px 12px #fff8d8;
+      border-radius: 0.9rem;
+    }
+
+    .neu-input {
+      width: 100%;
+      background: var(--gb-bg1);
+      border: 1px solid var(--gb-bg2);
+      border-radius: 0.8rem;
+      padding: 0.6rem 0.85rem;
+      color: var(--gb-fg);
+      box-shadow: inset 4px 4px 10px #d8c89f, inset -4px -4px 10px #fff7d6;
+    }
+
+    .neu-input:focus {
+      outline: none;
+      border-color: #458588;
+      box-shadow: inset 4px 4px 10px #d8c89f, inset -4px -4px 10px #fff7d6, 0 0 0 2px #45858833;
+    }
+
+    .neu-btn {
+      border-radius: 0.85rem;
+      padding: 0.55rem 1rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+      box-shadow: 6px 6px 12px #d2c39f, -6px -6px 12px #fff7d8;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    }
+
+    .neu-btn:hover {
+      filter: brightness(1.03);
+      transform: translateY(-1px);
+    }
+
+    .neu-btn:active {
+      transform: translateY(0);
+      box-shadow: inset 4px 4px 8px #ccb98f, inset -4px -4px 8px #fff8df;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-6xl mx-auto px-4 py-6">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="space-y-2 mb-4">
+          {% for category, message in messages %}
+            <div class="neu-surface px-3 py-2 text-sm {{ 'text-gb-red border-gb-red/50' if category == 'error' else 'text-gb-green border-gb-green/40' }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

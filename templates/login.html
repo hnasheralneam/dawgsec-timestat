@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-md mx-auto mt-14 neu-surface p-6">
+  <h1 class="text-2xl font-semibold mb-2 text-gb-fg">Sign in</h1>
+  <p class="text-sm mb-6 text-gb-fg/75">Track work, compare progress, and keep momentum.</p>
+  <form method="post" class="space-y-4">
+    <label class="block">
+      <span class="text-sm text-gb-fg/85">Username</span>
+      <input name="username" required class="mt-1 neu-input">
+    </label>
+    <label class="block">
+      <span class="text-sm text-gb-fg/85">6-digit code</span>
+      <input name="code" minlength="6" maxlength="6" required class="mt-1 neu-input">
+    </label>
+    <button class="w-full neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80">Sign in</button>
+  </form>
+  <p class="mt-5 text-sm text-gb-fg/75">
+    New here?
+    <a class="font-medium text-gb-purple hover:text-gb-blue" href="{{ url_for('register') }}">Create an account</a>
+  </p>
+</div>
+{% endblock %}

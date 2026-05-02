@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-md mx-auto mt-14 neu-surface p-6">
+  <h1 class="text-2xl font-semibold mb-2 text-gb-fg">Account ready</h1>
+  <p class="text-sm mb-4 text-gb-fg/80">Save this code now. You will use it to sign in as <span class="font-semibold">{{ username }}</span>.</p>
+  <div class="neu-inset p-4 text-center">
+    <div class="text-xs tracking-wide uppercase text-gb-fg/70 mb-1">Your 6-digit code</div>
+    <div class="text-4xl tracking-widest font-bold text-gb-green">{{ six_digit_code }}</div>
+  </div>
+  <a href="{{ url_for('login') }}" class="mt-5 block text-center neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80">Go to sign in</a>
+</div>
+{% endblock %}

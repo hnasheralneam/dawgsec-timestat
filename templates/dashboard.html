@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-gb-fg">TimeStat Dashboard</h1>
+    <p class="text-sm text-gb-fg/75">Welcome, {{ user.username }}.</p>
+  </div>
+  <form action="{{ url_for('logout') }}" method="post">
+    <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80">Sign out</button>
+  </form>
+</header>
+
+<div class="grid lg:grid-cols-3 gap-4">
+  <section class="lg:col-span-2 neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Session Tracker</h2>
+    <div class="grid md:grid-cols-3 gap-3 items-end">
+      <label class="block md:col-span-1">
+        <span class="text-sm text-gb-fg/85">Activity</span>
+        <select id="categoryId" class="mt-1 neu-input">
+          {% for category in categories %}
+            <option value="{{ category.id }}">{{ category.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block md:col-span-2">
+        <span class="text-sm text-gb-fg/85">Optional note</span>
+        <input id="sessionNote" maxlength="200" class="mt-1 neu-input" placeholder="What are you working on right now?">
+      </label>
+    </div>
+
+    <div class="mt-4 neu-inset p-4">
+      <div class="text-sm text-gb-fg/70">Current session</div>
+      <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
+      <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4">Start</button>
+        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4">Pause</button>
+        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4">Resume</button>
+        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4">Finish</button>
+      </div>
+    </div>
+    <p id="actionMessage" class="mt-3 text-sm text-gb-green"></p>
+  </section>
+
+  <section class="neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Live Leaderboard</h2>
+    <div class="overflow-auto max-h-96">
+      <table class="w-full text-sm">
+        <thead class="text-gb-fg/70">
+          <tr>
+            <th class="text-left py-2">Rank</th>
+            <th class="text-left py-2">User</th>
+            <th class="text-right py-2">Hours</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg">My Time Breakdown</h2>
+    <canvas id="myChart" height="210"></canvas>
+  </section>
+
+  <section class="neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Team Time Breakdown</h2>
+    <canvas id="teamChart" height="210"></canvas>
+  </section>
+
+  <section class="lg:col-span-3 neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Recent Sessions</h2>
+    <div class="overflow-auto">
+      <table class="w-full text-sm">
+        <thead class="text-gb-fg/70">
+          <tr>
+            <th class="text-left py-2">Category</th>
+            <th class="text-left py-2">Duration</th>
+            <th class="text-left py-2">Note</th>
+            <th class="text-left py-2">Ended</th>
+          </tr>
+        </thead>
+        <tbody id="recentBody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+  const state = {
+    current: null,
+    timerBase: 0
+  };
+
+  function formatDuration(total) {
+    const sec = Math.max(0, Math.floor(total));
+    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+    const s = String(sec % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+
+  function formatHours(seconds) {
+    return (seconds / 3600).toFixed(2);
+  }
+
+  function tsToLocal(ts) {
+    return new Date(ts * 1000).toLocaleString();
+  }
+
+  async function postJson(url, body = {}) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
+  function setMessage(text, isError = false) {
+    const el = document.getElementById("actionMessage");
+    el.textContent = text || "";
+    el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+  }
+
+  function updateButtons() {
+    const start = document.getElementById("startBtn");
+    const pause = document.getElementById("pauseBtn");
+    const resume = document.getElementById("resumeBtn");
+    const finish = document.getElementById("finishBtn");
+    if (!state.current) {
+      start.disabled = false; pause.disabled = true; resume.disabled = true; finish.disabled = true;
+    } else if (state.current.status === "running") {
+      start.disabled = true; pause.disabled = false; resume.disabled = true; finish.disabled = false;
+    } else {
+      start.disabled = true; pause.disabled = true; resume.disabled = false; finish.disabled = false;
+    }
+    [start, pause, resume, finish].forEach(btn => {
+      btn.classList.toggle("opacity-50", btn.disabled);
+      btn.classList.toggle("cursor-not-allowed", btn.disabled);
+    });
+  }
+
+  function renderSession() {
+    const label = document.getElementById("sessionLabel");
+    if (!state.current) {
+      label.textContent = "No active session";
+      document.getElementById("timerDisplay").textContent = "00:00:00";
+      updateButtons();
+      return;
+    }
+
+    label.textContent = `${state.current.category_name}${state.current.note ? " — " + state.current.note : ""} (${state.current.status})`;
+    updateButtons();
+  }
+
+  async function loadStatus() {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+    state.current = data.current_session;
+    state.timerBase = state.current ? state.current.elapsed_seconds : 0;
+    renderSession();
+  }
+
+  async function loadLeaderboard() {
+    const res = await fetch("/api/leaderboard");
+    const data = await res.json();
+    const tbody = document.getElementById("leaderboardBody");
+    tbody.innerHTML = "";
+    for (const row of data.leaderboard) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-gb-bg2";
+      tr.innerHTML = `
+        <td class="py-2">${row.rank}</td>
+        <td class="py-2">${row.username}</td>
+        <td class="py-2 text-right">${formatHours(row.seconds)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  let myChart = null;
+  let teamChart = null;
+
+  function renderPie(chartRef, canvasId, labels, values, title) {
+    if (chartRef) chartRef.destroy();
+    const ctx = document.getElementById(canvasId);
+    return new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: [
+            "#458588", "#98971a", "#d79921", "#cc241d", "#b16286",
+            "#689d6a", "#b57614", "#af3a03", "#076678", "#8f3f71"
+          ]
+        }]
+      },
+      options: {
+        plugins: { legend: { position: "bottom", labels: { color: "#3c3836" } }, title: { display: true, text: title, color: "#3c3836" } }
+      }
+    });
+  }
+
+  async function loadStats() {
+    const res = await fetch("/api/stats");
+    const data = await res.json();
+
+    myChart = renderPie(
+      myChart,
+      "myChart",
+      data.my_categories.map(x => x.name),
+      data.my_categories.map(x => x.seconds / 3600),
+      "Your Hours"
+    );
+
+    teamChart = renderPie(
+      teamChart,
+      "teamChart",
+      data.team_categories.map(x => x.name),
+      data.team_categories.map(x => x.seconds / 3600),
+      "Team Hours"
+    );
+  }
+
+  async function loadRecent() {
+    const res = await fetch("/api/recent-sessions");
+    const data = await res.json();
+    const tbody = document.getElementById("recentBody");
+    tbody.innerHTML = "";
+    for (const s of data.sessions) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-gb-bg2";
+      tr.innerHTML = `
+        <td class="py-2">${s.category_name}</td>
+        <td class="py-2">${formatDuration(s.duration_seconds)}</td>
+        <td class="py-2">${s.note || "-"}</td>
+        <td class="py-2">${tsToLocal(s.end_ts)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function refreshAll() {
+    try {
+      await Promise.all([loadStatus(), loadLeaderboard(), loadStats(), loadRecent()]);
+    } catch (_err) {
+      setMessage("Could not refresh data.", true);
+    }
+  }
+
+  document.getElementById("startBtn").addEventListener("click", async () => {
+    try {
+      await postJson("/api/session/start", {
+        category_id: Number(document.getElementById("categoryId").value),
+        note: document.getElementById("sessionNote").value.trim()
+      });
+      setMessage("Session started.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
+
+  document.getElementById("pauseBtn").addEventListener("click", async () => {
+    try {
+      await postJson("/api/session/pause");
+      setMessage("Session paused.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
+
+  document.getElementById("resumeBtn").addEventListener("click", async () => {
+    try {
+      await postJson("/api/session/resume");
+      setMessage("Session resumed.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
+
+  document.getElementById("finishBtn").addEventListener("click", async () => {
+    try {
+      await postJson("/api/session/finish");
+      setMessage("Session finished.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
+
+  setInterval(() => {
+    if (state.current && state.current.status === "running") {
+      state.timerBase += 1;
+      document.getElementById("timerDisplay").textContent = formatDuration(state.timerBase);
+    }
+  }, 1000);
+
+  refreshAll();
+  setInterval(refreshAll, 5000);
+</script>
+{% endblock %}
