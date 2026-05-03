@@ -2,17 +2,26 @@
 {% block content %}
 <header class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
-    <h1 class="text-2xl font-semibold text-gb-fg">TimeStat Dashboard</h1>
+    <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+      TimeStat Dashboard
+    </h1>
     <p class="text-sm text-gb-fg/75">Welcome, {{ user.username }}.</p>
   </div>
   <form action="{{ url_for('logout') }}" method="post">
-    <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80">Sign out</button>
+    <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+      Sign out
+    </button>
   </form>
 </header>
 
 <div class="grid lg:grid-cols-3 gap-4">
   <section class="lg:col-span-2 neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Session Tracker</h2>
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">timer</span>
+      Session Tracker
+    </h2>
     <div class="grid md:grid-cols-3 gap-3 items-end">
       <label class="block md:col-span-1">
         <span class="text-sm text-gb-fg/85">Activity</span>
@@ -33,17 +42,36 @@
       <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
       <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
       <div class="mt-4 flex flex-wrap gap-2">
-        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4">Start</button>
-        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4">Pause</button>
-        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4">Resume</button>
-        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4">Finish</button>
+        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4 inline-flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
+          Start
+        </button>
+        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">pause</span>
+          Pause
+        </button>
+        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
+          Resume
+        </button>
+        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">check_circle</span>
+          Finish
+        </button>
+        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
+          Cancel
+        </button>
       </div>
     </div>
     <p id="actionMessage" class="mt-3 text-sm text-gb-green"></p>
   </section>
 
   <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Live Leaderboard</h2>
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">military_tech</span>
+      Live Leaderboard
+    </h2>
     <div class="overflow-auto max-h-96">
       <table class="w-full text-sm">
         <thead class="text-gb-fg/70">
@@ -59,17 +87,26 @@
   </section>
 
   <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg">My Time Breakdown</h2>
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
+      My Time Breakdown
+    </h2>
     <canvas id="myChart" height="210"></canvas>
   </section>
 
   <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Team Time Breakdown</h2>
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">groups</span>
+      Team Time Breakdown
+    </h2>
     <canvas id="teamChart" height="210"></canvas>
   </section>
 
   <section class="lg:col-span-3 neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg">Recent Sessions</h2>
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">history</span>
+      Recent Sessions
+    </h2>
     <div class="overflow-auto">
       <table class="w-full text-sm">
         <thead class="text-gb-fg/70">
@@ -130,14 +167,15 @@
     const pause = document.getElementById("pauseBtn");
     const resume = document.getElementById("resumeBtn");
     const finish = document.getElementById("finishBtn");
+    const cancel = document.getElementById("cancelBtn");
     if (!state.current) {
-      start.disabled = false; pause.disabled = true; resume.disabled = true; finish.disabled = true;
+      start.disabled = false; pause.disabled = true; resume.disabled = true; finish.disabled = true; cancel.disabled = true;
     } else if (state.current.status === "running") {
-      start.disabled = true; pause.disabled = false; resume.disabled = true; finish.disabled = false;
+      start.disabled = true; pause.disabled = false; resume.disabled = true; finish.disabled = false; cancel.disabled = false;
     } else {
-      start.disabled = true; pause.disabled = true; resume.disabled = false; finish.disabled = false;
+      start.disabled = true; pause.disabled = true; resume.disabled = false; finish.disabled = false; cancel.disabled = false;
     }
-    [start, pause, resume, finish].forEach(btn => {
+    [start, pause, resume, finish, cancel].forEach(btn => {
       btn.classList.toggle("opacity-50", btn.disabled);
       btn.classList.toggle("cursor-not-allowed", btn.disabled);
     });
@@ -289,6 +327,18 @@
     try {
       await postJson("/api/session/finish");
       setMessage("Session finished.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
+
+  document.getElementById("cancelBtn").addEventListener("click", async () => {
+    if (!state.current) return;
+    if (!confirm("Cancel the current session? This will discard it.")) return;
+    try {
+      await postJson("/api/session/cancel");
+      setMessage("Session canceled.");
       await refreshAll();
     } catch (err) {
       setMessage(err.message, true);

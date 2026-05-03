@@ -325,6 +325,19 @@ def create_app() -> Flask:
         db.commit()
         return jsonify({"ok": True})
 
+    @app.post("/api/session/cancel")
+    @login_required
+    def api_cancel_session():
+        user_id = int(session["user_id"])
+        active = get_active_session(user_id)
+        if not active:
+            return jsonify({"error": "No active session to cancel"}), 400
+
+        db = get_db()
+        db.execute("DELETE FROM sessions WHERE id = ?", (active["id"],))
+        db.commit()
+        return jsonify({"ok": True})
+
     @app.get("/api/leaderboard")
     @login_required
     def api_leaderboard():
