@@ -8,12 +8,17 @@
     </h1>
     <p class="text-sm text-gb-fg/75">Welcome, {{ user.username }}.</p>
   </div>
-  <form action="{{ url_for('logout') }}" method="post">
-    <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">logout</span>
-      Sign out
+  <div class="flex items-center gap-2">
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+      <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
-  </form>
+    <form action="{{ url_for('logout') }}" method="post">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+        Sign out
+      </button>
+    </form>
+  </div>
 </header>
 
 <div class="grid lg:grid-cols-3 gap-4">
@@ -46,19 +51,19 @@
           <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           Start
         </button>
-        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2">
+        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2 hidden">
           <span class="material-symbols-rounded" aria-hidden="true">pause</span>
           Pause
         </button>
-        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2">
+        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2 hidden">
           <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
           Resume
         </button>
-        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2">
+        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2 hidden">
           <span class="material-symbols-rounded" aria-hidden="true">check_circle</span>
           Finish
         </button>
-        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2">
+        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2 hidden">
           <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
           Cancel
         </button>
@@ -115,6 +120,7 @@
             <th class="text-left py-2">Duration</th>
             <th class="text-left py-2">Note</th>
             <th class="text-left py-2">Ended</th>
+            <th class="text-left py-2">Actions</th>
           </tr>
         </thead>
         <tbody id="recentBody"></tbody>
@@ -145,6 +151,10 @@
     return new Date(ts * 1000).toLocaleString();
   }
 
+  function cssRgb(varName) {
+    return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
+  }
+
   async function postJson(url, body = {}) {
     const res = await fetch(url, {
       method: "POST",
@@ -168,29 +178,50 @@
     const resume = document.getElementById("resumeBtn");
     const finish = document.getElementById("finishBtn");
     const cancel = document.getElementById("cancelBtn");
+
+    let showStart = false;
+    let showPause = false;
+    let showResume = false;
+    let showFinish = false;
+    let showCancel = false;
+
     if (!state.current) {
-      start.disabled = false; pause.disabled = true; resume.disabled = true; finish.disabled = true; cancel.disabled = true;
+      showStart = true;
     } else if (state.current.status === "running") {
-      start.disabled = true; pause.disabled = false; resume.disabled = true; finish.disabled = false; cancel.disabled = false;
+      showPause = true;
+      showFinish = true;
+      showCancel = true;
     } else {
-      start.disabled = true; pause.disabled = true; resume.disabled = false; finish.disabled = false; cancel.disabled = false;
+      showResume = true;
+      showFinish = true;
+      showCancel = true;
     }
-    [start, pause, resume, finish, cancel].forEach(btn => {
-      btn.classList.toggle("opacity-50", btn.disabled);
-      btn.classList.toggle("cursor-not-allowed", btn.disabled);
-    });
+
+    start.disabled = !showStart;
+    pause.disabled = !showPause;
+    resume.disabled = !showResume;
+    finish.disabled = !showFinish;
+    cancel.disabled = !showCancel;
+
+    start.classList.toggle("hidden", !showStart);
+    pause.classList.toggle("hidden", !showPause);
+    resume.classList.toggle("hidden", !showResume);
+    finish.classList.toggle("hidden", !showFinish);
+    cancel.classList.toggle("hidden", !showCancel);
   }
 
   function renderSession() {
     const label = document.getElementById("sessionLabel");
+    const timer = document.getElementById("timerDisplay");
     if (!state.current) {
       label.textContent = "No active session";
-      document.getElementById("timerDisplay").textContent = "00:00:00";
+      timer.textContent = "00:00:00";
       updateButtons();
       return;
     }
 
     label.textContent = `${state.current.category_name}${state.current.note ? " — " + state.current.note : ""} (${state.current.status})`;
+    timer.textContent = formatDuration(state.timerBase);
     updateButtons();
   }
 
@@ -212,7 +243,12 @@
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
         <td class="py-2">${row.rank}</td>
-        <td class="py-2">${row.username}</td>
+        <td class="py-2">
+          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple">
+            <span class="material-symbols-rounded" aria-hidden="true">person</span>
+            ${row.username}
+          </a>
+        </td>
         <td class="py-2 text-right">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
@@ -225,6 +261,7 @@
   function renderPie(chartRef, canvasId, labels, values, title) {
     if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
+    const textColor = cssRgb("--gb-fg-rgb");
     return new Chart(ctx, {
       type: "doughnut",
       data: {
@@ -238,7 +275,7 @@
         }]
       },
       options: {
-        plugins: { legend: { position: "bottom", labels: { color: "#3c3836" } }, title: { display: true, text: title, color: "#3c3836" } }
+        plugins: { legend: { position: "bottom", labels: { color: textColor } }, title: { display: true, text: title, color: textColor } }
       }
     });
   }
@@ -277,9 +314,28 @@
         <td class="py-2">${formatDuration(s.duration_seconds)}</td>
         <td class="py-2">${s.note || "-"}</td>
         <td class="py-2">${tsToLocal(s.end_ts)}</td>
+        <td class="py-2">
+          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}">
+            <span class="material-symbols-rounded" aria-hidden="true">delete</span>
+            Remove
+          </button>
+        </td>
       `;
       tbody.appendChild(tr);
     }
+    tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const sessionId = Number(btn.getAttribute("data-delete-session-id"));
+        if (!confirm("Delete this past session?")) return;
+        try {
+          await postJson("/api/session/delete", { session_id: sessionId });
+          setMessage("Past session removed.");
+          await refreshAll();
+        } catch (err) {
+          setMessage(err.message, true);
+        }
+      });
+    });
   }
 
   async function refreshAll() {

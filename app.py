@@ -128,6 +128,87 @@ def create_app() -> Flask:
             (user_id,),
         ).fetchone()
 
+    def get_user_by_id(user_id: int):
+        db = get_db()
+        return db.execute(
+            "SELECT id, username FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+
+    def category_rows_for_user(user_id: int | None, current_ts: int):
+        db = get_db()
+        categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
+        totals = {c["id"]: 0 for c in categories}
+
+        if user_id is None:
+            completed = db.execute(
+                """
+                SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                FROM sessions
+                WHERE status = 'completed'
+                GROUP BY category_id
+                """
+            ).fetchall()
+            active = db.execute(
+                "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
+            ).fetchall()
+        else:
+            completed = db.execute(
+                """
+                SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                FROM sessions
+                WHERE status = 'completed' AND user_id = ?
+                GROUP BY category_id
+                """,
+                (user_id,),
+            ).fetchall()
+            active = db.execute(
+                """
+                SELECT * FROM sessions
+                WHERE user_id = ? AND status IN ('running', 'paused')
+                """,
+                (user_id,),
+            ).fetchall()
+
+        for row in completed:
+            totals[row["category_id"]] += int(row["seconds"] or 0)
+        for row in active:
+            totals[row["category_id"]] += elapsed_seconds(row, current_ts)
+
+        return [
+            {"name": c["name"], "seconds": totals[c["id"]]}
+            for c in categories
+            if totals[c["id"]] > 0
+        ]
+
+    def recent_sessions_for_user(user_id: int, limit: int = 10):
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT s.id, s.note, s.start_ts, s.end_ts, s.paused_seconds, c.name AS category_name
+            FROM sessions s
+            JOIN categories c ON c.id = s.category_id
+            WHERE s.user_id = ? AND s.status = 'completed'
+            ORDER BY s.id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+
+        sessions_payload = []
+        for row in rows:
+            duration = max(0, int(row["end_ts"] - row["start_ts"] - row["paused_seconds"]))
+            sessions_payload.append(
+                {
+                    "id": row["id"],
+                    "category_name": row["category_name"],
+                    "note": row["note"] or "",
+                    "start_ts": row["start_ts"],
+                    "end_ts": row["end_ts"],
+                    "duration_seconds": duration,
+                }
+            )
+        return sessions_payload
+
     @app.teardown_appcontext
     def close_db(_exception):
         db = g.pop("db", None)
@@ -200,6 +281,21 @@ def create_app() -> Flask:
         categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
         user = get_current_user()
         return render_template("dashboard.html", categories=categories, user=user)
+
+    @app.get("/users/<int:user_id>")
+    @login_required
+    def user_profile(user_id: int):
+        target_user = get_user_by_id(user_id)
+        if not target_user:
+            flash("User not found.", "error")
+            return redirect(url_for("dashboard"))
+        current_user = get_current_user()
+        return render_template(
+            "user.html",
+            user=current_user,
+            target_user=target_user,
+            can_delete_sessions=current_user["id"] == target_user["id"],
+        )
 
     @app.get("/api/status")
     @login_required
@@ -338,6 +434,30 @@ def create_app() -> Flask:
         db.commit()
         return jsonify({"ok": True})
 
+    @app.post("/api/session/delete")
+    @login_required
+    def api_delete_session():
+        payload = request.get_json(silent=True) or {}
+        session_id = payload.get("session_id")
+        if not isinstance(session_id, int):
+            return jsonify({"error": "session_id must be an integer"}), 400
+
+        user_id = int(session["user_id"])
+        db = get_db()
+        existing = db.execute(
+            """
+            SELECT id FROM sessions
+            WHERE id = ? AND user_id = ? AND status = 'completed'
+            """,
+            (session_id, user_id),
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Completed session not found"}), 404
+
+        db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        db.commit()
+        return jsonify({"ok": True})
+
     @app.get("/api/leaderboard")
     @login_required
     def api_leaderboard():
@@ -384,45 +504,10 @@ def create_app() -> Flask:
     @app.get("/api/stats")
     @login_required
     def api_stats():
-        db = get_db()
         current_ts = now_ts()
         user_id = int(session["user_id"])
-
-        categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
-        my_totals = {c["id"]: 0 for c in categories}
-        team_totals = {c["id"]: 0 for c in categories}
-
-        completed = db.execute(
-            """
-            SELECT user_id, category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
-            FROM sessions
-            WHERE status = 'completed'
-            GROUP BY user_id, category_id
-            """
-        ).fetchall()
-        for row in completed:
-            sec = int(row["seconds"] or 0)
-            team_totals[row["category_id"]] += sec
-            if row["user_id"] == user_id:
-                my_totals[row["category_id"]] += sec
-
-        active = db.execute(
-            "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
-        ).fetchall()
-        for row in active:
-            sec = elapsed_seconds(row, current_ts)
-            team_totals[row["category_id"]] += sec
-            if row["user_id"] == user_id:
-                my_totals[row["category_id"]] += sec
-
-        my_rows = [
-            {"name": c["name"], "seconds": my_totals[c["id"]]} for c in categories if my_totals[c["id"]] > 0
-        ]
-        team_rows = [
-            {"name": c["name"], "seconds": team_totals[c["id"]]}
-            for c in categories
-            if team_totals[c["id"]] > 0
-        ]
+        my_rows = category_rows_for_user(user_id, current_ts)
+        team_rows = category_rows_for_user(None, current_ts)
 
         return jsonify({"my_categories": my_rows, "team_categories": team_rows})
 
@@ -430,33 +515,34 @@ def create_app() -> Flask:
     @login_required
     def api_recent_sessions():
         user_id = int(session["user_id"])
-        db = get_db()
-        rows = db.execute(
-            """
-            SELECT s.id, s.note, s.start_ts, s.end_ts, s.paused_seconds, c.name AS category_name
-            FROM sessions s
-            JOIN categories c ON c.id = s.category_id
-            WHERE s.user_id = ? AND s.status = 'completed'
-            ORDER BY s.id DESC
-            LIMIT 10
-            """,
-            (user_id,),
-        ).fetchall()
+        return jsonify({"sessions": recent_sessions_for_user(user_id)})
 
-        sessions_payload = []
-        for row in rows:
-            duration = max(0, int(row["end_ts"] - row["start_ts"] - row["paused_seconds"]))
-            sessions_payload.append(
-                {
-                    "id": row["id"],
-                    "category_name": row["category_name"],
-                    "note": row["note"] or "",
-                    "start_ts": row["start_ts"],
-                    "end_ts": row["end_ts"],
-                    "duration_seconds": duration,
-                }
-            )
-        return jsonify({"sessions": sessions_payload})
+    @app.get("/api/users/<int:user_id>/stats")
+    @login_required
+    def api_user_stats(user_id: int):
+        target_user = get_user_by_id(user_id)
+        if not target_user:
+            return jsonify({"error": "User not found"}), 404
+        rows = category_rows_for_user(user_id, now_ts())
+        return jsonify(
+            {
+                "user": {"id": target_user["id"], "username": target_user["username"]},
+                "categories": rows,
+            }
+        )
+
+    @app.get("/api/users/<int:user_id>/recent-sessions")
+    @login_required
+    def api_user_recent_sessions(user_id: int):
+        target_user = get_user_by_id(user_id)
+        if not target_user:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify(
+            {
+                "user": {"id": target_user["id"], "username": target_user["username"]},
+                "sessions": recent_sessions_for_user(user_id),
+            }
+        )
 
     with app.app_context():
         init_db()

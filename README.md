@@ -20,8 +20,10 @@ Open http://127.0.0.1:5000
 - Start, pause, resume, and finish tracking sessions
 - Built-in activity categories for leadership visibility
 - Live leaderboard (near-real-time polling)
+- Clickable leaderboard profiles with user charts and recent sessions
 - Personal and team category breakdown charts (Chart.js)
 - Recent session history
+- Remove past completed sessions
 
 ## Notes
 

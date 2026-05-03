@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">person</span>
+      {{ target_user.username }}'s Activity
+    </h1>
+    <p class="text-sm text-gb-fg/75">Profile insights from tracked sessions.</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+      Back to dashboard
+    </a>
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+      <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+    </button>
+    <form action="{{ url_for('logout') }}" method="post">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+        Sign out
+      </button>
+    </form>
+  </div>
+</header>
+
+<div class="grid lg:grid-cols-2 gap-4">
+  <section class="neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
+      Category Breakdown
+    </h2>
+    <canvas id="categoryChart" height="240"></canvas>
+    <p id="categoryEmpty" class="hidden mt-2 text-sm text-gb-fg/70">No session data yet.</p>
+  </section>
+
+  <section class="neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">monitoring</span>
+      Recent Session Durations
+    </h2>
+    <canvas id="durationChart" height="240"></canvas>
+    <p id="durationEmpty" class="hidden mt-2 text-sm text-gb-fg/70">No completed sessions yet.</p>
+  </section>
+
+  <section class="lg:col-span-2 neu-surface p-4">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">history</span>
+      Recent Sessions
+    </h2>
+    <div class="overflow-auto">
+      <table class="w-full text-sm">
+        <thead class="text-gb-fg/70">
+          <tr>
+            <th class="text-left py-2">Category</th>
+            <th class="text-left py-2">Duration</th>
+            <th class="text-left py-2">Note</th>
+            <th class="text-left py-2">Ended</th>
+            {% if can_delete_sessions %}
+            <th class="text-left py-2">Actions</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody id="recentBody"></tbody>
+      </table>
+    </div>
+    <p id="recentEmpty" class="hidden mt-2 text-sm text-gb-fg/70">No completed sessions yet.</p>
+  </section>
+</div>
+
+<script>
+  const targetUserId = {{ target_user.id }};
+  const canDeleteSessions = {{ "true" if can_delete_sessions else "false" }};
+  let categoryChart = null;
+  let durationChart = null;
+
+  function formatDuration(total) {
+    const sec = Math.max(0, Math.floor(total));
+    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+    const s = String(sec % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+
+  function tsToLocal(ts) {
+    return new Date(ts * 1000).toLocaleString();
+  }
+
+  function cssRgb(varName) {
+    return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
+  }
+
+  async function postJson(url, body = {}) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
+  function renderCategoryChart(rows) {
+    if (categoryChart) categoryChart.destroy();
+    document.getElementById("categoryEmpty").classList.toggle("hidden", rows.length > 0);
+    if (!rows.length) return;
+    const textColor = cssRgb("--gb-fg-rgb");
+
+    categoryChart = new Chart(document.getElementById("categoryChart"), {
+      type: "doughnut",
+      data: {
+        labels: rows.map((x) => x.name),
+        datasets: [{
+          data: rows.map((x) => x.seconds / 3600),
+          backgroundColor: [
+            "#458588", "#98971a", "#d79921", "#cc241d", "#b16286",
+            "#689d6a", "#b57614", "#af3a03", "#076678", "#8f3f71"
+          ]
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { position: "bottom", labels: { color: textColor } }
+        }
+      }
+    });
+  }
+
+  function renderRecentTable(sessions) {
+    const tbody = document.getElementById("recentBody");
+    tbody.innerHTML = "";
+    for (const s of sessions) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-gb-bg2";
+      tr.innerHTML = `
+        <td class="py-2">${s.category_name}</td>
+        <td class="py-2">${formatDuration(s.duration_seconds)}</td>
+        <td class="py-2">${s.note || "-"}</td>
+        <td class="py-2">${tsToLocal(s.end_ts)}</td>
+        ${canDeleteSessions ? `
+          <td class="py-2">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}">
+              <span class="material-symbols-rounded" aria-hidden="true">delete</span>
+              Remove
+            </button>
+          </td>
+        ` : ""}
+      `;
+      tbody.appendChild(tr);
+    }
+    if (canDeleteSessions) {
+      tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const sessionId = Number(btn.getAttribute("data-delete-session-id"));
+          if (!confirm("Delete this past session?")) return;
+          try {
+            await postJson("/api/session/delete", { session_id: sessionId });
+            await loadPageData();
+          } catch (err) {
+            alert(err.message || "Could not delete session");
+          }
+        });
+      });
+    }
+    document.getElementById("recentEmpty").classList.toggle("hidden", sessions.length > 0);
+  }
+
+  function renderDurationChart(sessions) {
+    if (durationChart) durationChart.destroy();
+    document.getElementById("durationEmpty").classList.toggle("hidden", sessions.length > 0);
+    if (!sessions.length) return;
+
+    const textColor = cssRgb("--gb-fg-rgb");
+    const gridColor = cssRgb("--gb-bg2-rgb");
+    const barColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim();
+    const ordered = [...sessions].reverse();
+    durationChart = new Chart(document.getElementById("durationChart"), {
+      type: "bar",
+      data: {
+        labels: ordered.map((_, idx) => `#${idx + 1}`),
+        datasets: [{
+          label: "Hours",
+          data: ordered.map((s) => s.duration_seconds / 3600),
+          backgroundColor: `rgb(${barColor} / 0.8)`,
+          borderColor: `rgb(${barColor})`,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: textColor }, grid: { color: gridColor } },
+          y: { ticks: { color: textColor }, grid: { color: gridColor } }
+        },
+        plugins: {
+          legend: { labels: { color: textColor } }
+        }
+      }
+    });
+  }
+
+  async function loadPageData() {
+    const [statsRes, recentRes] = await Promise.all([
+      fetch(`/api/users/${targetUserId}/stats`),
+      fetch(`/api/users/${targetUserId}/recent-sessions`)
+    ]);
+
+    const statsData = await statsRes.json();
+    const recentData = await recentRes.json();
+
+    if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
+    if (!recentRes.ok) throw new Error(recentData.error || "Could not load recent sessions");
+
+    renderCategoryChart(statsData.categories || []);
+    renderRecentTable(recentData.sessions || []);
+    renderDurationChart(recentData.sessions || []);
+  }
+
+  loadPageData().catch(() => {
+    document.getElementById("categoryEmpty").classList.remove("hidden");
+    document.getElementById("durationEmpty").classList.remove("hidden");
+    document.getElementById("recentEmpty").classList.remove("hidden");
+  });
+</script>
+{% endblock %}
