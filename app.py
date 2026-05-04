@@ -34,6 +34,7 @@ DEFAULT_CATEGORIES = [
     "Mentoring/Training Others",
     "Other",
 ]
+WEEK_SECONDS = 7 * 24 * 60 * 60
 
 
 def create_app() -> Flask:
@@ -57,6 +58,26 @@ def create_app() -> Flask:
         if row["status"] == "paused" and row["pause_started_ts"] is not None:
             elapsed -= current_ts - row["pause_started_ts"]
         return max(0, int(elapsed))
+
+    def elapsed_seconds_in_window(
+        row: sqlite3.Row, current_ts: int, since_ts: int | None
+    ) -> int:
+        if since_ts is None:
+            return elapsed_seconds(row, current_ts)
+
+        start_ts = int(row["start_ts"])
+        end_ts = int(row["end_ts"]) if row["end_ts"] is not None else current_ts
+        if end_ts <= since_ts:
+            return 0
+
+        total_elapsed = elapsed_seconds(row, current_ts)
+        total_span = max(1, end_ts - start_ts)
+        overlap_span = end_ts - max(start_ts, since_ts)
+        if overlap_span <= 0:
+            return 0
+
+        ratio = min(1.0, max(0.0, overlap_span / total_span))
+        return int(total_elapsed * ratio)
 
     def init_db() -> None:
         db = get_db()
@@ -134,51 +155,139 @@ def create_app() -> Flask:
             "SELECT id, username FROM users WHERE id = ?", (user_id,)
         ).fetchone()
 
-    def category_rows_for_user(user_id: int | None, current_ts: int):
+    def category_rows_for_user(
+        user_id: int | None, current_ts: int, since_ts: int | None = None
+    ):
         db = get_db()
         categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
         totals = {c["id"]: 0 for c in categories}
 
-        if user_id is None:
-            completed = db.execute(
-                """
-                SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
-                FROM sessions
-                WHERE status = 'completed'
-                GROUP BY category_id
-                """
-            ).fetchall()
-            active = db.execute(
-                "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
-            ).fetchall()
-        else:
-            completed = db.execute(
-                """
-                SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
-                FROM sessions
-                WHERE status = 'completed' AND user_id = ?
-                GROUP BY category_id
-                """,
-                (user_id,),
-            ).fetchall()
-            active = db.execute(
-                """
-                SELECT * FROM sessions
-                WHERE user_id = ? AND status IN ('running', 'paused')
-                """,
-                (user_id,),
-            ).fetchall()
+        if since_ts is None:
+            if user_id is None:
+                completed = db.execute(
+                    """
+                    SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                    FROM sessions
+                    WHERE status = 'completed'
+                    GROUP BY category_id
+                    """
+                ).fetchall()
+                active = db.execute(
+                    "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
+                ).fetchall()
+            else:
+                completed = db.execute(
+                    """
+                    SELECT category_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                    FROM sessions
+                    WHERE status = 'completed' AND user_id = ?
+                    GROUP BY category_id
+                    """,
+                    (user_id,),
+                ).fetchall()
+                active = db.execute(
+                    """
+                    SELECT * FROM sessions
+                    WHERE user_id = ? AND status IN ('running', 'paused')
+                    """,
+                    (user_id,),
+                ).fetchall()
 
-        for row in completed:
-            totals[row["category_id"]] += int(row["seconds"] or 0)
-        for row in active:
-            totals[row["category_id"]] += elapsed_seconds(row, current_ts)
+            for row in completed:
+                totals[row["category_id"]] += int(row["seconds"] or 0)
+            for row in active:
+                totals[row["category_id"]] += elapsed_seconds(row, current_ts)
+        else:
+            if user_id is None:
+                rows = db.execute(
+                    """
+                    SELECT category_id, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                    FROM sessions
+                    WHERE status IN ('running', 'paused')
+                       OR (status = 'completed' AND end_ts > ?)
+                    """,
+                    (since_ts,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """
+                    SELECT category_id, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                    FROM sessions
+                    WHERE user_id = ?
+                      AND (
+                        status IN ('running', 'paused')
+                        OR (status = 'completed' AND end_ts > ?)
+                      )
+                    """,
+                    (user_id, since_ts),
+                ).fetchall()
+
+            for row in rows:
+                totals[row["category_id"]] += elapsed_seconds_in_window(
+                    row, current_ts, since_ts
+                )
 
         return [
             {"name": c["name"], "seconds": totals[c["id"]]}
             for c in categories
             if totals[c["id"]] > 0
         ]
+
+    def leaderboard_rows(current_ts: int, since_ts: int | None = None):
+        db = get_db()
+        users = db.execute("SELECT id, username FROM users").fetchall()
+        totals = {row["id"]: 0 for row in users}
+
+        if since_ts is None:
+            completed = db.execute(
+                """
+                SELECT user_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                FROM sessions
+                WHERE status = 'completed'
+                GROUP BY user_id
+                """
+            ).fetchall()
+            for row in completed:
+                totals[row["user_id"]] = int(row["seconds"] or 0)
+
+            active = db.execute(
+                """
+                SELECT user_id, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                FROM sessions
+                WHERE status IN ('running', 'paused')
+                """
+            ).fetchall()
+            for row in active:
+                totals[row["user_id"]] = totals.get(row["user_id"], 0) + elapsed_seconds(
+                    row, current_ts
+                )
+        else:
+            rows = db.execute(
+                """
+                SELECT user_id, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                FROM sessions
+                WHERE status IN ('running', 'paused')
+                   OR (status = 'completed' AND end_ts > ?)
+                """,
+                (since_ts,),
+            ).fetchall()
+            for row in rows:
+                totals[row["user_id"]] = totals.get(row["user_id"], 0) + (
+                    elapsed_seconds_in_window(row, current_ts, since_ts)
+                )
+
+        rows = [
+            {
+                "user_id": user["id"],
+                "username": user["username"],
+                "seconds": totals.get(user["id"], 0),
+            }
+            for user in users
+        ]
+        rows.sort(key=lambda x: x["seconds"], reverse=True)
+        for idx, row in enumerate(rows, start=1):
+            row["rank"] = idx
+        return rows
 
     def recent_sessions_for_user(user_id: int, limit: int = 10):
         db = get_db()
@@ -281,6 +390,18 @@ def create_app() -> Flask:
         categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
         user = get_current_user()
         return render_template("dashboard.html", categories=categories, user=user)
+
+    @app.get("/weekly-leaderboard")
+    @login_required
+    def weekly_leaderboard():
+        user = get_current_user()
+        return render_template("weekly_leaderboard.html", user=user)
+
+    @app.get("/all-time-stats")
+    @login_required
+    def all_time_stats():
+        user = get_current_user()
+        return render_template("all_time_stats.html", user=user)
 
     @app.get("/users/<int:user_id>")
     @login_required
@@ -461,45 +582,29 @@ def create_app() -> Flask:
     @app.get("/api/leaderboard")
     @login_required
     def api_leaderboard():
-        db = get_db()
         current_ts = now_ts()
+        return jsonify({"leaderboard": leaderboard_rows(current_ts), "server_ts": current_ts})
 
-        users = db.execute("SELECT id, username FROM users").fetchall()
-        totals = {row["id"]: 0 for row in users}
+    @app.get("/api/leaderboard/weekly")
+    @login_required
+    def api_weekly_leaderboard():
+        current_ts = now_ts()
+        since_ts = current_ts - WEEK_SECONDS
+        limit_raw = request.args.get("limit")
+        limit = None
+        if limit_raw is not None:
+            try:
+                parsed_limit = int(limit_raw)
+            except ValueError:
+                return jsonify({"error": "limit must be an integer"}), 400
+            if parsed_limit < 1:
+                return jsonify({"error": "limit must be at least 1"}), 400
+            limit = parsed_limit
 
-        completed = db.execute(
-            """
-            SELECT user_id, SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
-            FROM sessions
-            WHERE status = 'completed'
-            GROUP BY user_id
-            """
-        ).fetchall()
-        for row in completed:
-            totals[row["user_id"]] = int(row["seconds"] or 0)
-
-        active = db.execute(
-            "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
-        ).fetchall()
-        for row in active:
-            totals[row["user_id"]] = totals.get(row["user_id"], 0) + elapsed_seconds(
-                row, current_ts
-            )
-
-        rows = [
-            {
-                "user_id": user["id"],
-                "username": user["username"],
-                "seconds": totals.get(user["id"], 0),
-            }
-            for user in users
-        ]
-        rows.sort(key=lambda x: x["seconds"], reverse=True)
-
-        for idx, row in enumerate(rows, start=1):
-            row["rank"] = idx
-
-        return jsonify({"leaderboard": rows, "server_ts": current_ts})
+        rows = leaderboard_rows(current_ts, since_ts=since_ts)
+        if limit is not None:
+            rows = rows[:limit]
+        return jsonify({"leaderboard": rows, "server_ts": current_ts, "since_ts": since_ts})
 
     @app.get("/api/stats")
     @login_required
@@ -508,8 +613,19 @@ def create_app() -> Flask:
         user_id = int(session["user_id"])
         my_rows = category_rows_for_user(user_id, current_ts)
         team_rows = category_rows_for_user(None, current_ts)
+        since_ts = current_ts - WEEK_SECONDS
+        my_week_rows = category_rows_for_user(user_id, current_ts, since_ts=since_ts)
+        team_week_rows = category_rows_for_user(None, current_ts, since_ts=since_ts)
 
-        return jsonify({"my_categories": my_rows, "team_categories": team_rows})
+        return jsonify(
+            {
+                "my_categories": my_rows,
+                "team_categories": team_rows,
+                "my_categories_week": my_week_rows,
+                "team_categories_week": team_week_rows,
+                "since_ts": since_ts,
+            }
+        )
 
     @app.get("/api/recent-sessions")
     @login_required

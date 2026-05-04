@@ -74,8 +74,8 @@
 
   <section class="neu-surface p-4">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">military_tech</span>
-      Live Leaderboard
+      <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+      Weekly Leaderboard (Top 5)
     </h2>
     <div class="overflow-auto max-h-96">
       <table class="w-full text-sm">
@@ -86,25 +86,35 @@
             <th class="text-right py-2">Hours</th>
           </tr>
         </thead>
-        <tbody id="leaderboardBody"></tbody>
+        <tbody id="weeklyLeaderboardBody"></tbody>
       </table>
+    </div>
+    <div class="mt-3 grid grid-cols-2 gap-3">
+      <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
+        Full weekly leaderboard
+      </a>
+      <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
+        All-time leaderboard
+      </a>
     </div>
   </section>
 
   <section class="neu-surface p-4">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
-      My Time Breakdown
+      Personal Breakdown (Last 7 Days)
     </h2>
-    <canvas id="myChart" height="210"></canvas>
+    <canvas id="myWeekChart" height="210"></canvas>
   </section>
 
   <section class="neu-surface p-4">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">groups</span>
-      Team Time Breakdown
+      Team Breakdown (Last 7 Days)
     </h2>
-    <canvas id="teamChart" height="210"></canvas>
+    <canvas id="teamWeekChart" height="210"></canvas>
   </section>
 
   <section class="lg:col-span-3 neu-surface p-4">
@@ -233,10 +243,10 @@
     renderSession();
   }
 
-  async function loadLeaderboard() {
-    const res = await fetch("/api/leaderboard");
+  async function loadWeeklyLeaderboard() {
+    const res = await fetch("/api/leaderboard/weekly?limit=5");
     const data = await res.json();
-    const tbody = document.getElementById("leaderboardBody");
+    const tbody = document.getElementById("weeklyLeaderboardBody");
     tbody.innerHTML = "";
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
@@ -255,8 +265,8 @@
     }
   }
 
-  let myChart = null;
-  let teamChart = null;
+  let myWeekChart = null;
+  let teamWeekChart = null;
 
   function renderPie(chartRef, canvasId, labels, values, title) {
     if (chartRef) chartRef.destroy();
@@ -284,20 +294,20 @@
     const res = await fetch("/api/stats");
     const data = await res.json();
 
-    myChart = renderPie(
-      myChart,
-      "myChart",
-      data.my_categories.map(x => x.name),
-      data.my_categories.map(x => x.seconds / 3600),
-      "Your Hours"
+    myWeekChart = renderPie(
+      myWeekChart,
+      "myWeekChart",
+      data.my_categories_week.map(x => x.name),
+      data.my_categories_week.map(x => x.seconds / 3600),
+      "Your Hours (Last 7 Days)"
     );
 
-    teamChart = renderPie(
-      teamChart,
-      "teamChart",
-      data.team_categories.map(x => x.name),
-      data.team_categories.map(x => x.seconds / 3600),
-      "Team Hours"
+    teamWeekChart = renderPie(
+      teamWeekChart,
+      "teamWeekChart",
+      data.team_categories_week.map(x => x.name),
+      data.team_categories_week.map(x => x.seconds / 3600),
+      "Team Hours (Last 7 Days)"
     );
   }
 
@@ -340,7 +350,12 @@
 
   async function refreshAll() {
     try {
-      await Promise.all([loadStatus(), loadLeaderboard(), loadStats(), loadRecent()]);
+      await Promise.all([
+        loadStatus(),
+        loadWeeklyLeaderboard(),
+        loadStats(),
+        loadRecent()
+      ]);
     } catch (_err) {
       setMessage("Could not refresh data.", true);
     }
