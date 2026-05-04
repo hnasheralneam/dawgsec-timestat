@@ -23,7 +23,10 @@ Open http://127.0.0.1:5000
 - Weekly leaderboard preview (top 5) + full weekly leaderboard page
 - Clickable leaderboard profiles with user charts and recent sessions
 - Personal and team category breakdown charts (all-time page + last 7 days on dashboard, Chart.js)
-- Recent session history
+- Recent session history with search/category filters
+- Edit past completed sessions (category + note)
+- Settings modal for username updates, login-code reveal-on-hover, and login-code reset
+- Mobile-friendly responsive tables and empty-state messaging
 - Remove past completed sessions
 
 ## Notes

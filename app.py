@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
@@ -52,6 +53,22 @@ def create_app() -> Flask:
     def now_ts() -> int:
         return int(datetime.now(timezone.utc).timestamp())
 
+    def generate_login_code() -> str:
+        return f"{random.SystemRandom().randrange(0, 1_000_000):06d}"
+
+    def parse_username(raw_value: str | None) -> tuple[str | None, str | None]:
+        username = " ".join((raw_value or "").split())
+        if not username:
+            return None, "Username is required."
+        if len(username) > 50:
+            return None, "Username must be 50 characters or fewer."
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9 -]*[A-Za-z0-9])?", username):
+            return (
+                None,
+                "Username can only include letters, numbers, spaces, and hyphens.",
+            )
+        return username, None
+
     def elapsed_seconds(row: sqlite3.Row, current_ts: int) -> int:
         end_ts = row["end_ts"] if row["end_ts"] is not None else current_ts
         elapsed = end_ts - row["start_ts"] - row["paused_seconds"]
@@ -87,6 +104,7 @@ def create_app() -> Flask:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 code_hash TEXT NOT NULL,
+                login_code TEXT,
                 created_ts INTEGER NOT NULL
             );
 
@@ -111,6 +129,13 @@ def create_app() -> Flask:
             );
             """
         )
+
+        user_columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "login_code" not in user_columns:
+            db.execute("ALTER TABLE users ADD COLUMN login_code TEXT")
 
         for cat in DEFAULT_CATEGORIES:
             db.execute("INSERT OR IGNORE INTO categories(name) VALUES(?)", (cat,))
@@ -293,7 +318,14 @@ def create_app() -> Flask:
         db = get_db()
         rows = db.execute(
             """
-            SELECT s.id, s.note, s.start_ts, s.end_ts, s.paused_seconds, c.name AS category_name
+            SELECT
+                s.id,
+                s.note,
+                s.start_ts,
+                s.end_ts,
+                s.paused_seconds,
+                c.id AS category_id,
+                c.name AS category_name
             FROM sessions s
             JOIN categories c ON c.id = s.category_id
             WHERE s.user_id = ? AND s.status = 'completed'
@@ -309,6 +341,7 @@ def create_app() -> Flask:
             sessions_payload.append(
                 {
                     "id": row["id"],
+                    "category_id": row["category_id"],
                     "category_name": row["category_name"],
                     "note": row["note"] or "",
                     "start_ts": row["start_ts"],
@@ -335,20 +368,25 @@ def create_app() -> Flask:
         if request.method == "GET":
             return render_template("register.html")
 
-        username = request.form.get("username", "").strip()
-        if not username:
-            flash("Username is required.", "error")
+        username, username_error = parse_username(request.form.get("username"))
+        if username_error:
+            flash(username_error, "error")
             return redirect(url_for("register"))
 
-        six_digit_code = f"{random.SystemRandom().randrange(0, 1_000_000):06d}"
+        six_digit_code = generate_login_code()
         db = get_db()
         try:
             db.execute(
                 """
-                INSERT INTO users(username, code_hash, created_ts)
-                VALUES(?, ?, ?)
+                INSERT INTO users(username, code_hash, login_code, created_ts)
+                VALUES(?, ?, ?, ?)
                 """,
-                (username, generate_password_hash(six_digit_code), now_ts()),
+                (
+                    username,
+                    generate_password_hash(six_digit_code),
+                    six_digit_code,
+                    now_ts(),
+                ),
             )
             db.commit()
         except sqlite3.IntegrityError:
@@ -364,8 +402,11 @@ def create_app() -> Flask:
         if request.method == "GET":
             return render_template("login.html")
 
-        username = request.form.get("username", "").strip()
+        username, username_error = parse_username(request.form.get("username"))
         code = request.form.get("code", "").strip()
+        if username_error:
+            flash("Invalid username or 6-digit code.", "error")
+            return redirect(url_for("login"))
         db = get_db()
         user = db.execute(
             "SELECT id, username, code_hash FROM users WHERE username = ?", (username,)
@@ -411,11 +452,14 @@ def create_app() -> Flask:
             flash("User not found.", "error")
             return redirect(url_for("dashboard"))
         current_user = get_current_user()
+        db = get_db()
+        categories = db.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
         return render_template(
             "user.html",
             user=current_user,
             target_user=target_user,
             can_delete_sessions=current_user["id"] == target_user["id"],
+            categories=categories,
         )
 
     @app.get("/api/status")
@@ -578,6 +622,109 @@ def create_app() -> Flask:
         db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         db.commit()
         return jsonify({"ok": True})
+
+    @app.post("/api/session/update")
+    @login_required
+    def api_update_session():
+        payload = request.get_json(silent=True) or {}
+        session_id = payload.get("session_id")
+        category_id = payload.get("category_id")
+        note = (payload.get("note") or "").strip()
+
+        if not isinstance(session_id, int):
+            return jsonify({"error": "session_id must be an integer"}), 400
+        if not isinstance(category_id, int):
+            return jsonify({"error": "category_id must be an integer"}), 400
+        if len(note) > 200:
+            return jsonify({"error": "note must be 200 characters or fewer"}), 400
+
+        user_id = int(session["user_id"])
+        db = get_db()
+        existing = db.execute(
+            """
+            SELECT id FROM sessions
+            WHERE id = ? AND user_id = ? AND status = 'completed'
+            """,
+            (session_id, user_id),
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Completed session not found"}), 404
+
+        category = db.execute(
+            "SELECT id FROM categories WHERE id = ?",
+            (category_id,),
+        ).fetchone()
+        if not category:
+            return jsonify({"error": "Unknown category"}), 400
+
+        db.execute(
+            """
+            UPDATE sessions
+            SET category_id = ?, note = ?
+            WHERE id = ?
+            """,
+            (category_id, note, session_id),
+        )
+        db.commit()
+        return jsonify({"ok": True})
+
+    @app.get("/api/user/settings")
+    @login_required
+    def api_user_settings():
+        user_id = int(session["user_id"])
+        db = get_db()
+        user = db.execute(
+            "SELECT id, username, login_code FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify(
+            {
+                "user": {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "login_code": user["login_code"],
+                }
+            }
+        )
+
+    @app.post("/api/user/settings")
+    @login_required
+    def api_user_settings_update():
+        payload = request.get_json(silent=True) or {}
+        username, username_error = parse_username(payload.get("username"))
+        if username_error:
+            return jsonify({"error": username_error}), 400
+
+        user_id = int(session["user_id"])
+        db = get_db()
+        try:
+            db.execute(
+                "UPDATE users SET username = ? WHERE id = ?",
+                (username, user_id),
+            )
+            db.commit()
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "That username is already taken"}), 400
+        return jsonify({"ok": True, "user": {"id": user_id, "username": username}})
+
+    @app.post("/api/user/settings/reset-login-code")
+    @login_required
+    def api_user_settings_reset_login_code():
+        user_id = int(session["user_id"])
+        new_login_code = generate_login_code()
+        db = get_db()
+        db.execute(
+            """
+            UPDATE users
+            SET code_hash = ?, login_code = ?
+            WHERE id = ?
+            """,
+            (generate_password_hash(new_login_code), new_login_code, user_id),
+        )
+        db.commit()
+        return jsonify({"ok": True, "login_code": new_login_code})
 
     @app.get("/api/leaderboard")
     @login_required

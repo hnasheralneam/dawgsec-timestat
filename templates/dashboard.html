@@ -1,19 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-<header class="flex flex-wrap items-center justify-between gap-3 mb-6">
+<header class="flex flex-wrap items-center justify-between gap-3 mb-5">
   <div>
     <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
       TimeStat Dashboard
     </h1>
-    <p class="text-sm text-gb-fg/75">Welcome, {{ user.username }}.</p>
+    <p class="text-sm text-gb-fg/75">Welcome, <span id="headerUsername">{{ user.username }}</span>.</p>
   </div>
-  <div class="flex items-center gap-2">
+  <div class="flex items-center flex-wrap gap-2">
+    <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" type="button" title="Open account settings">
+      <span class="material-symbols-rounded" aria-hidden="true">settings</span>
+    </button>
     <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
       <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
     <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" title="Sign out of your account">
         <span class="material-symbols-rounded" aria-hidden="true">logout</span>
         Sign out
       </button>
@@ -22,7 +25,7 @@
 </header>
 
 <div class="grid lg:grid-cols-3 gap-4">
-  <section class="lg:col-span-2 neu-surface p-4">
+  <section class="lg:col-span-2 neu-surface p-5">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">timer</span>
       Session Tracker
@@ -30,7 +33,7 @@
     <div class="grid md:grid-cols-3 gap-3 items-end">
       <label class="block md:col-span-1">
         <span class="text-sm text-gb-fg/85">Activity</span>
-        <select id="categoryId" class="mt-1 neu-input">
+        <select id="categoryId" class="mt-1 neu-input" title="Select which activity this session belongs to">
           {% for category in categories %}
             <option value="{{ category.id }}">{{ category.name }}</option>
           {% endfor %}
@@ -38,32 +41,32 @@
       </label>
       <label class="block md:col-span-2">
         <span class="text-sm text-gb-fg/85">Optional note</span>
-        <input id="sessionNote" maxlength="200" class="mt-1 neu-input" placeholder="What are you working on right now?">
+        <input id="sessionNote" maxlength="200" class="mt-1 neu-input" placeholder="What are you working on right now?" title="Add context that appears in your history">
       </label>
     </div>
 
     <div class="mt-4 neu-inset p-4">
       <div class="text-sm text-gb-fg/70">Current session</div>
       <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
-      <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
+      <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green" title="Live elapsed timer">00:00:00</div>
       <div class="mt-4 flex flex-wrap gap-2">
-        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4 inline-flex items-center gap-2">
+        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4 inline-flex items-center gap-2" title="Start a new active session">
           <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           Start
         </button>
-        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2 hidden">
+        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2 hidden" title="Pause the running session">
           <span class="material-symbols-rounded" aria-hidden="true">pause</span>
           Pause
         </button>
-        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2 hidden">
+        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2 hidden" title="Resume the paused session">
           <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
           Resume
         </button>
-        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2 hidden">
+        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2 hidden" title="Finish and save the current session">
           <span class="material-symbols-rounded" aria-hidden="true">check_circle</span>
           Finish
         </button>
-        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2 hidden">
+        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2 hidden" title="Discard the current in-progress session">
           <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
           Cancel
         </button>
@@ -72,13 +75,14 @@
     <p id="actionMessage" class="mt-3 text-sm text-gb-green"></p>
   </section>
 
-  <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-1 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
-      Weekly Leaderboard (Top 5)
+      Weekly Leaderboard
     </h2>
+    <p id="weeklyRangeLabel" class="text-xs text-gb-fg/70 mb-2">Top 5 team mebers across the last 7 days</p>
     <div class="overflow-auto max-h-96">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm responsive-table">
         <thead class="text-gb-fg/70">
           <tr>
             <th class="text-left py-2">Rank</th>
@@ -89,41 +93,94 @@
         <tbody id="weeklyLeaderboardBody"></tbody>
       </table>
     </div>
-    <div class="mt-3 grid grid-cols-2 gap-3">
-      <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
+    <p id="weeklyLeaderboardEmpty" class="empty-state hidden mt-3">No weekly tracked time yet.</p>
+    <div class="mt-3 grid sm:grid-cols-2 gap-3">
+      <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" title="View all users in weekly leaderboard">
         <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
         Full weekly leaderboard
       </a>
-      <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
+      <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" title="Open all-time data in a separate page">
         <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
         All-time leaderboard
       </a>
     </div>
   </section>
 
-  <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-1 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
-      Personal Breakdown (Last 7 Days)
+      Personal Breakdown
     </h2>
+    <p class="text-xs text-gb-fg/70 mb-2">Time share by category across the last 7 days.</p>
     <canvas id="myWeekChart" height="210"></canvas>
+    <p id="myWeekEmpty" class="empty-state hidden mt-3">No personal session data in the last 7 days.</p>
   </section>
 
-  <section class="neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-1 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">groups</span>
-      Team Breakdown (Last 7 Days)
+      Team Breakdown
     </h2>
+    <p class="text-xs text-gb-fg/70 mb-2">Combined team time by category across the last 7 days.</p>
     <canvas id="teamWeekChart" height="210"></canvas>
+    <p id="teamWeekEmpty" class="empty-state hidden mt-3">No team session data in the last 7 days.</p>
   </section>
 
-  <section class="lg:col-span-3 neu-surface p-4">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+  <section class="lg:col-span-3 neu-surface p-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+      <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">history</span>
-      Recent Sessions
-    </h2>
+      History
+      </h2>
+      <div class="w-full md:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
+        <input id="recentSearchInput" class="neu-input text-sm w-full sm:w-72 lg:w-80 min-w-0" placeholder="Search note or category" title="Filter sessions by category or note">
+        <select id="recentCategoryFilter" class="neu-input text-sm w-full sm:w-52 min-w-0" title="Filter by category">
+          <option value="">All categories</option>
+          {% for category in categories %}
+            <option value="{{ category.name }}">{{ category.name }}</option>
+          {% endfor %}
+        </select>
+        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" title="Clear session filters">
+          <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div id="editSessionPanel" class="hidden mb-4 neu-inset p-4">
+      <h3 class="font-medium text-gb-fg flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">edit</span>
+        Edit Completed Session
+      </h3>
+      <input type="hidden" id="editSessionId">
+      <div class="grid sm:grid-cols-2 gap-3 mt-3">
+        <label class="block">
+          <span class="text-sm text-gb-fg/85">Category</span>
+          <select id="editCategoryId" class="mt-1 neu-input" title="Change the category for this completed session">
+            {% for category in categories %}
+              <option value="{{ category.id }}">{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-sm text-gb-fg/85">Note</span>
+          <input id="editNote" maxlength="200" class="mt-1 neu-input" placeholder="Session note" title="Update the note shown in history">
+        </label>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button id="saveEditSessionBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" title="Save this session update">
+          <span class="material-symbols-rounded" aria-hidden="true">save</span>
+          Save
+        </button>
+        <button id="cancelEditSessionBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" title="Cancel editing">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          Cancel
+        </button>
+      </div>
+    </div>
+
     <div class="overflow-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm responsive-table">
         <thead class="text-gb-fg/70">
           <tr>
             <th class="text-left py-2">Category</th>
@@ -136,13 +193,60 @@
         <tbody id="recentBody"></tbody>
       </table>
     </div>
+    <p id="recentEmpty" class="empty-state hidden mt-3">No recent sessions match your filters.</p>
   </section>
+</div>
+
+<div id="settingsModal" class="fixed inset-0 z-50 hidden">
+  <div id="settingsBackdrop" class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
+  <div class="absolute inset-0 p-4 flex items-center justify-center">
+    <section class="neu-surface w-full max-w-lg p-5 relative">
+      <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" title="Close settings">
+        <span class="material-symbols-rounded" aria-hidden="true">close</span>
+      </button>
+      <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
+        <span class="material-symbols-rounded" aria-hidden="true">manage_accounts</span>
+        Account Settings
+      </h2>
+      <p class="text-sm text-gb-fg/75 mb-4">Update your username and view your login code.</p>
+
+      <label class="block">
+        <span class="text-sm text-gb-fg/85">Username</span>
+        <input id="settingsUsername" maxlength="50" class="mt-1 neu-input" placeholder="Username">
+      </label>
+
+      <div class="mt-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="text-sm text-gb-fg/85">Login code <span class="hint">(hover to reveal)</span></div>
+          <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" title="Generate a new 6-digit login code">
+            <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+            Reset
+          </button>
+        </div>
+        <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" title="Hover to reveal login code">••••••</div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button id="saveSettingsBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" title="Save username changes">
+          <span class="material-symbols-rounded" aria-hidden="true">save</span>
+          Save Changes
+        </button>
+        <button id="cancelSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" title="Cancel and close settings">
+          <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          Cancel
+        </button>
+      </div>
+      <p id="settingsMessage" class="mt-3 text-sm text-gb-green"></p>
+    </section>
+  </div>
 </div>
 
 <script>
   const state = {
     current: null,
-    timerBase: 0
+    timerBase: 0,
+    recentSessions: [],
+    settings: null
   };
 
   function formatDuration(total) {
@@ -159,6 +263,10 @@
 
   function tsToLocal(ts) {
     return new Date(ts * 1000).toLocaleString();
+  }
+
+  function formatShortDate(ts) {
+    return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
   function cssRgb(varName) {
@@ -180,6 +288,42 @@
     const el = document.getElementById("actionMessage");
     el.textContent = text || "";
     el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+  }
+
+  function setSettingsMessage(text, isError = false) {
+    const el = document.getElementById("settingsMessage");
+    el.textContent = text || "";
+    el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+  }
+
+  function setLoginCodeDisplay(masked = true) {
+    const box = document.getElementById("settingsLoginCodeBox");
+    if (!state.settings || !state.settings.login_code) {
+      box.textContent = "Unavailable";
+      box.title = "Login code not available for this account";
+      return;
+    }
+    box.textContent = masked ? "••••••" : state.settings.login_code;
+    box.title = masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`;
+  }
+
+  function closeSettingsModal() {
+    document.getElementById("settingsModal").classList.add("hidden");
+    setSettingsMessage("");
+    setLoginCodeDisplay(true);
+  }
+
+  async function openSettingsModal() {
+    document.getElementById("settingsModal").classList.remove("hidden");
+    setSettingsMessage("");
+    const res = await fetch("/api/user/settings");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load settings");
+    state.settings = data.user;
+    document.getElementById("settingsUsername").value = state.settings.username || "";
+    const headerName = document.getElementById("headerUsername");
+    if (headerName && state.settings.username) headerName.textContent = state.settings.username;
+    setLoginCodeDisplay(true);
   }
 
   function updateButtons() {
@@ -246,20 +390,30 @@
   async function loadWeeklyLeaderboard() {
     const res = await fetch("/api/leaderboard/weekly?limit=5");
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
     const tbody = document.getElementById("weeklyLeaderboardBody");
+    const empty = document.getElementById("weeklyLeaderboardEmpty");
+    const range = document.getElementById("weeklyRangeLabel");
     tbody.innerHTML = "";
+    range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
+
+    if (!data.leaderboard.length) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
-        <td class="py-2">${row.rank}</td>
-        <td class="py-2">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple">
+        <td class="py-2" data-label="Rank">#${row.rank}</td>
+        <td class="py-2" data-label="User">
+          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" title="View ${row.username}'s profile">
             <span class="material-symbols-rounded" aria-hidden="true">person</span>
             ${row.username}
           </a>
         </td>
-        <td class="py-2 text-right">${formatHours(row.seconds)}</td>
+        <td class="py-2 text-right" data-label="Hours" title="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -268,7 +422,14 @@
   let myWeekChart = null;
   let teamWeekChart = null;
 
-  function renderPie(chartRef, canvasId, labels, values, title) {
+  function renderPie(chartRef, canvasId, labels, values, title, emptyId) {
+    const empty = document.getElementById(emptyId);
+    if (!labels.length) {
+      if (chartRef) chartRef.destroy();
+      empty.classList.remove("hidden");
+      return null;
+    }
+    empty.classList.add("hidden");
     if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
     const textColor = cssRgb("--gb-fg-rgb");
@@ -299,7 +460,8 @@
       "myWeekChart",
       data.my_categories_week.map(x => x.name),
       data.my_categories_week.map(x => x.seconds / 3600),
-      "Your Hours (Last 7 Days)"
+      "Your Hours (Last 7 Days)",
+      "myWeekEmpty"
     );
 
     teamWeekChart = renderPie(
@@ -307,25 +469,61 @@
       "teamWeekChart",
       data.team_categories_week.map(x => x.name),
       data.team_categories_week.map(x => x.seconds / 3600),
-      "Team Hours (Last 7 Days)"
+      "Team Hours (Last 7 Days)",
+      "teamWeekEmpty"
     );
   }
 
-  async function loadRecent() {
-    const res = await fetch("/api/recent-sessions");
-    const data = await res.json();
+  function filterRecentSessions() {
+    const query = document.getElementById("recentSearchInput").value.trim().toLowerCase();
+    const category = document.getElementById("recentCategoryFilter").value.trim().toLowerCase();
+    return state.recentSessions.filter((s) => {
+      const matchesQuery = !query || s.note.toLowerCase().includes(query) || s.category_name.toLowerCase().includes(query);
+      const matchesCategory = !category || s.category_name.toLowerCase() === category;
+      return matchesQuery && matchesCategory;
+    });
+  }
+
+  function closeEditPanel() {
+    document.getElementById("editSessionPanel").classList.add("hidden");
+    document.getElementById("editSessionId").value = "";
+    document.getElementById("editNote").value = "";
+  }
+
+  function openEditPanel(sessionId) {
+    const selected = state.recentSessions.find((s) => s.id === sessionId);
+    if (!selected) return;
+    document.getElementById("editSessionId").value = String(selected.id);
+    document.getElementById("editCategoryId").value = String(selected.category_id);
+    document.getElementById("editNote").value = selected.note || "";
+    document.getElementById("editSessionPanel").classList.remove("hidden");
+    document.getElementById("editNote").focus();
+  }
+
+  function renderRecent(sessions) {
     const tbody = document.getElementById("recentBody");
+    const empty = document.getElementById("recentEmpty");
     tbody.innerHTML = "";
-    for (const s of data.sessions) {
+    if (!sessions.length) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    for (const s of sessions) {
       const tr = document.createElement("tr");
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
-        <td class="py-2">${s.category_name}</td>
-        <td class="py-2">${formatDuration(s.duration_seconds)}</td>
-        <td class="py-2">${s.note || "-"}</td>
-        <td class="py-2">${tsToLocal(s.end_ts)}</td>
-        <td class="py-2">
-          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}">
+        <td class="py-2" data-label="Category">${s.category_name}</td>
+        <td class="py-2" data-label="Duration" title="Started ${tsToLocal(s.start_ts)}">${formatDuration(s.duration_seconds)}</td>
+        <td class="py-2" data-label="Note" title="${s.note || "No note"}">${s.note || "-"}</td>
+        <td class="py-2" data-label="Ended">${tsToLocal(s.end_ts)}</td>
+        <td class="py-2" data-label="Actions">
+          <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" title="Edit category and note for this completed session">
+            <span class="material-symbols-rounded" aria-hidden="true">edit</span>
+            Edit
+          </button>
+          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" title="Delete this completed session">
             <span class="material-symbols-rounded" aria-hidden="true">delete</span>
             Remove
           </button>
@@ -333,6 +531,14 @@
       `;
       tbody.appendChild(tr);
     }
+
+    tbody.querySelectorAll("[data-edit-session-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const sessionId = Number(btn.getAttribute("data-edit-session-id"));
+        openEditPanel(sessionId);
+      });
+    });
+
     tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const sessionId = Number(btn.getAttribute("data-delete-session-id"));
@@ -348,6 +554,14 @@
     });
   }
 
+  async function loadRecent() {
+    const res = await fetch("/api/recent-sessions");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
+    state.recentSessions = data.sessions || [];
+    renderRecent(filterRecentSessions());
+  }
+
   async function refreshAll() {
     try {
       await Promise.all([
@@ -360,6 +574,46 @@
       setMessage("Could not refresh data.", true);
     }
   }
+
+  document.getElementById("recentSearchInput").addEventListener("input", () => {
+    renderRecent(filterRecentSessions());
+  });
+
+  document.getElementById("recentCategoryFilter").addEventListener("change", () => {
+    renderRecent(filterRecentSessions());
+  });
+
+  document.getElementById("clearRecentFiltersBtn").addEventListener("click", () => {
+    document.getElementById("recentSearchInput").value = "";
+    document.getElementById("recentCategoryFilter").value = "";
+    renderRecent(filterRecentSessions());
+  });
+
+  document.getElementById("cancelEditSessionBtn").addEventListener("click", () => {
+    closeEditPanel();
+  });
+
+  document.getElementById("saveEditSessionBtn").addEventListener("click", async () => {
+    const sessionId = Number(document.getElementById("editSessionId").value);
+    const categoryId = Number(document.getElementById("editCategoryId").value);
+    const note = document.getElementById("editNote").value.trim();
+    if (!sessionId) {
+      setMessage("No session selected for editing.", true);
+      return;
+    }
+    try {
+      await postJson("/api/session/update", {
+        session_id: sessionId,
+        category_id: categoryId,
+        note
+      });
+      closeEditPanel();
+      setMessage("Past session updated.");
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
+  });
 
   document.getElementById("startBtn").addEventListener("click", async () => {
     try {
@@ -422,6 +676,67 @@
       document.getElementById("timerDisplay").textContent = formatDuration(state.timerBase);
     }
   }, 1000);
+
+  document.getElementById("openSettingsBtn").addEventListener("click", async () => {
+    try {
+      await openSettingsModal();
+    } catch (err) {
+      setMessage(err.message, true);
+      closeSettingsModal();
+    }
+  });
+
+  document.getElementById("closeSettingsBtn").addEventListener("click", () => {
+    closeSettingsModal();
+  });
+
+  document.getElementById("cancelSettingsBtn").addEventListener("click", () => {
+    closeSettingsModal();
+  });
+
+  document.getElementById("settingsBackdrop").addEventListener("click", () => {
+    closeSettingsModal();
+  });
+
+  document.getElementById("settingsLoginCodeBox").addEventListener("mouseenter", () => {
+    setLoginCodeDisplay(false);
+  });
+  document.getElementById("settingsLoginCodeBox").addEventListener("mouseleave", () => {
+    setLoginCodeDisplay(true);
+  });
+
+  document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+    const username = document.getElementById("settingsUsername").value.trim();
+    try {
+      const data = await postJson("/api/user/settings", { username });
+      if (state.settings) state.settings.username = data.user.username;
+      const headerName = document.getElementById("headerUsername");
+      if (headerName) headerName.textContent = data.user.username;
+      setSettingsMessage("Settings updated.");
+    } catch (err) {
+      setSettingsMessage(err.message, true);
+    }
+  });
+
+  document.getElementById("resetLoginCodeBtn").addEventListener("click", async () => {
+    if (!confirm("Reset your login code? Your old code will stop working immediately.")) return;
+    try {
+      const data = await postJson("/api/user/settings/reset-login-code");
+      if (!state.settings) state.settings = {};
+      state.settings.login_code = data.login_code;
+      setLoginCodeDisplay(false);
+      setSettingsMessage("Login code reset. Hover out/in to hide and reveal again.");
+    } catch (err) {
+      setSettingsMessage(err.message, true);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!document.getElementById("settingsModal").classList.contains("hidden")) {
+      closeSettingsModal();
+    }
+  });
 
   refreshAll();
   setInterval(refreshAll, 5000);

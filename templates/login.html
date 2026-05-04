@@ -1,31 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-md mx-auto mt-14 neu-surface p-6">
-  <h1 class="text-2xl font-semibold mb-2 text-gb-fg flex items-center gap-2">
-    <span class="material-symbols-rounded" aria-hidden="true">login</span>
-    Sign in
-  </h1>
-  <p class="text-sm mb-6 text-gb-fg/75">Track work, compare progress, and keep momentum.</p>
-  <form method="post" class="space-y-4">
-    <label class="block">
-      <span class="text-sm text-gb-fg/85">Username</span>
-      <input name="username" required class="mt-1 neu-input">
-    </label>
-    <label class="block">
-      <span class="text-sm text-gb-fg/85">6-digit code</span>
-      <input name="code" minlength="6" maxlength="6" required class="mt-1 neu-input">
-    </label>
-    <button class="w-full neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center justify-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">key</span>
-      Sign in
-    </button>
-  </form>
-  <p class="mt-5 text-sm text-gb-fg/75">
-    New here?
-    <a class="font-medium text-gb-purple hover:text-gb-blue inline-flex items-center gap-1" href="{{ url_for('register') }}">
-      <span class="material-symbols-rounded" aria-hidden="true">person_add</span>
-      Create an account
-    </a>
-  </p>
+<div class="min-h-[calc(100vh-5.5rem)] flex items-center justify-center">
+  <div class="w-full max-w-md neu-surface p-6 sm:p-7">
+    <div class="mb-6">
+      <div class="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-gb-fg/70 mb-2">
+        <span class="material-symbols-rounded" aria-hidden="true">schedule</span>
+        TimeStat
+      </div>
+      <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">login</span>
+        Sign in
+      </h1>
+      <p class="text-sm mt-2 text-gb-fg/75">Track work, compare progress, and keep momentum.</p>
+    </div>
+
+    <form method="post" class="space-y-4">
+      <label class="block">
+        <span class="text-sm text-gb-fg/85">Username</span>
+        <input name="username" required autocomplete="username" class="mt-1 neu-input">
+      </label>
+      <label class="block">
+        <span class="text-sm text-gb-fg/85">6-digit code</span>
+        <input name="code" minlength="6" maxlength="6" required inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" class="mt-1 neu-input">
+      </label>
+      <button class="w-full neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center justify-center gap-2">
+        <span class="material-symbols-rounded" aria-hidden="true">key</span>
+        Sign in
+      </button>
+    </form>
+
+    <p class="mt-5 text-sm text-gb-fg/75 text-center">
+      New here?
+      <a class="font-medium text-gb-purple hover:text-gb-blue inline-flex items-center gap-1" href="{{ url_for('register') }}">
+        <span class="material-symbols-rounded" aria-hidden="true">person_add</span>
+        Create an account
+      </a>
+    </p>
+  </div>
 </div>
 {% endblock %}
