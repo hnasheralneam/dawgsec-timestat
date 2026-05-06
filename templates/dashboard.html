@@ -35,7 +35,7 @@
         <span class="text-sm text-gb-fg/85">Activity</span>
         <select id="categoryId" class="mt-1 neu-input" title="Select which activity this session belongs to">
           {% for category in categories %}
-            <option value="{{ category.id }}">{{ category.name }}</option>
+            <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
       </label>
@@ -156,9 +156,9 @@
       <div class="grid sm:grid-cols-2 gap-3 mt-3">
         <label class="block">
           <span class="text-sm text-gb-fg/85">Category</span>
-          <select id="editCategoryId" class="mt-1 neu-input" title="Change the category for this completed session">
+          <select id="editCategoryName" class="mt-1 neu-input" title="Change the category for this completed session">
             {% for category in categories %}
-              <option value="{{ category.id }}">{{ category.name }}</option>
+              <option value="{{ category.name }}">{{ category.name }}</option>
             {% endfor %}
           </select>
         </label>
@@ -273,10 +273,23 @@
     return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
   async function postJson(url, body = {}) {
+    const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken
+      },
       body: JSON.stringify(body)
     });
     const data = await res.json();
@@ -494,7 +507,7 @@
     const selected = state.recentSessions.find((s) => s.id === sessionId);
     if (!selected) return;
     document.getElementById("editSessionId").value = String(selected.id);
-    document.getElementById("editCategoryId").value = String(selected.category_id);
+    document.getElementById("editCategoryName").value = String(selected.category_name || "");
     document.getElementById("editNote").value = selected.note || "";
     document.getElementById("editSessionPanel").classList.remove("hidden");
     document.getElementById("editNote").focus();
@@ -511,13 +524,19 @@
     empty.classList.add("hidden");
 
     for (const s of sessions) {
+      const safeCategoryName = escapeHtml(s.category_name || "");
+      const safeNote = escapeHtml(s.note || "");
+      const safeStart = escapeHtml(tsToLocal(s.start_ts));
+      const safeEnd = escapeHtml(tsToLocal(s.end_ts));
+      const safeDuration = escapeHtml(formatDuration(s.duration_seconds));
+      const safeNoteTitle = safeNote || "No note";
       const tr = document.createElement("tr");
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
-        <td class="py-2" data-label="Category">${s.category_name}</td>
-        <td class="py-2" data-label="Duration" title="Started ${tsToLocal(s.start_ts)}">${formatDuration(s.duration_seconds)}</td>
-        <td class="py-2" data-label="Note" title="${s.note || "No note"}">${s.note || "-"}</td>
-        <td class="py-2" data-label="Ended">${tsToLocal(s.end_ts)}</td>
+        <td class="py-2" data-label="Category">${safeCategoryName}</td>
+        <td class="py-2" data-label="Duration" title="Started ${safeStart}">${safeDuration}</td>
+        <td class="py-2" data-label="Note" title="${safeNoteTitle}">${safeNote || "-"}</td>
+        <td class="py-2" data-label="Ended">${safeEnd}</td>
         <td class="py-2" data-label="Actions">
           <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" title="Edit category and note for this completed session">
             <span class="material-symbols-rounded" aria-hidden="true">edit</span>
@@ -595,7 +614,7 @@
 
   document.getElementById("saveEditSessionBtn").addEventListener("click", async () => {
     const sessionId = Number(document.getElementById("editSessionId").value);
-    const categoryId = Number(document.getElementById("editCategoryId").value);
+    const categoryName = document.getElementById("editCategoryName").value.trim();
     const note = document.getElementById("editNote").value.trim();
     if (!sessionId) {
       setMessage("No session selected for editing.", true);
@@ -604,7 +623,7 @@
     try {
       await postJson("/api/session/update", {
         session_id: sessionId,
-        category_id: categoryId,
+        category_name: categoryName,
         note
       });
       closeEditPanel();
@@ -618,7 +637,7 @@
   document.getElementById("startBtn").addEventListener("click", async () => {
     try {
       await postJson("/api/session/start", {
-        category_id: Number(document.getElementById("categoryId").value),
+        category_name: document.getElementById("categoryId").value.trim(),
         note: document.getElementById("sessionNote").value.trim()
       });
       setMessage("Session started.");

@@ -1,42 +1,50 @@
 # TimeStat
 
-Minimal Flask + SQLite web app for tracking cyber competition preparation time, with a live leaderboard and category breakdown charts.
+Lightweight Flask + SQLite app for tracking team time and viewing leaderboard/stats.
 
-## Run locally
+## Quick start (local)
+
+1. Create venv and install dependencies:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+2. Create your local env file:
+
+```bash
+cp deploy/timestat.env.example .env
+```
+
+3. Edit `.env` and set at least:
+- `SECRET_KEY` (required)
+- `ADMIN_USERNAME` + `ADMIN_PASSWORD` (required for `/admin/login`)
+
+4. Run:
+
+```bash
 python app.py
 ```
 
-Open http://127.0.0.1:5000
+Open: http://127.0.0.1:5000
 
-## Features
+## Environment variables
 
-- Account creation with generated 6-digit login code
-- Login/logout
-- Start, pause, resume, and finish tracking sessions
-- Built-in activity categories for leadership visibility
-- Live leaderboard (near-real-time polling) on a dedicated all-time stats page
-- Weekly leaderboard preview (top 5) + full weekly leaderboard page
-- Clickable leaderboard profiles with user charts and recent sessions
-- Personal and team category breakdown charts (all-time page + last 7 days on dashboard, Chart.js)
-- Recent session history with search/category filters
-- Edit past completed sessions (category + note)
-- Settings modal for username updates, login-code reveal-on-hover, and login-code reset
-- Mobile-friendly responsive tables and empty-state messaging
-- Remove past completed sessions
+All supported env values are in `deploy/timestat.env.example`.
 
-## Notes
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | Yes | Flask session signing key |
+| `ADMIN_USERNAME` | No | Enables admin login when paired with `ADMIN_PASSWORD` |
+| `ADMIN_PASSWORD` | No | Enables admin login when paired with `ADMIN_USERNAME` |
+| `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS |
+| `FLASK_DEBUG` | No | Set `1` for debug mode when running `python app.py` |
 
-- SQLite DB file: `timestat.db` (created automatically)
-- This app is intentionally lightweight and low-complexity
+## Deploy (systemd + Gunicorn)
 
-## Deploy with systemd + Gunicorn
-
-1. Copy app to server and install dependencies:
+1. Install app and dependencies:
 
 ```bash
 sudo mkdir -p /opt/timestat /etc/timestat
@@ -47,7 +55,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Create runtime user and env file:
+2. Create runtime user + env file:
 
 ```bash
 sudo useradd --system --home /opt/timestat --shell /usr/sbin/nologin timestat || true
@@ -66,11 +74,24 @@ sudo systemctl enable --now timestat
 sudo systemctl status timestat --no-pager
 ```
 
-4. Useful commands:
+Useful:
 
 ```bash
 sudo journalctl -u timestat -f --no-pager
 sudo systemctl restart timestat
 ```
 
-Service listens on `127.0.0.1:8000` (intended for reverse proxy via nginx/Caddy).
+Service binds `127.0.0.1:8000` (put behind nginx/Caddy).
+
+## Ops notes
+
+- DB file: `timestat.db` (auto-created)
+- Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (UTC)
+- Backups older than 14 days are auto-removed
+- Sessions store `category_name` directly (stable historical labels)
+
+If your DB still has `sessions.category_id`, run:
+
+```bash
+python migrate_sessions_category_name.py --db /path/to/timestat.db
+```
