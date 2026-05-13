@@ -30,6 +30,25 @@
 </header>
 
 <div class="grid lg:grid-cols-2 gap-4">
+  <section class="lg:col-span-2 neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-2 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+      Activity Grid (Last 20 Weeks)
+    </h2>
+    <p class="text-xs text-gb-fg/70 mb-3">GitHub-style daily activity based on completed sessions.</p>
+    <div id="activityGrid" class="overflow-x-auto"></div>
+    <div class="mt-3 flex items-center gap-2 text-xs text-gb-fg/75">
+      <span>Less</span>
+      <span id="activityLegend0" class="w-3 h-3 rounded-sm"></span>
+      <span id="activityLegend1" class="w-3 h-3 rounded-sm"></span>
+      <span id="activityLegend2" class="w-3 h-3 rounded-sm"></span>
+      <span id="activityLegend3" class="w-3 h-3 rounded-sm"></span>
+      <span id="activityLegend4" class="w-3 h-3 rounded-sm"></span>
+      <span>More</span>
+    </div>
+    <p id="activityEmpty" class="hidden mt-3 empty-state">No completed-session activity yet.</p>
+  </section>
+
   <section class="neu-surface p-5">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
@@ -128,7 +147,11 @@
   const canDeleteSessions = {{ "true" if can_delete_sessions else "false" }};
   let categoryChart = null;
   let durationChart = null;
-  const state = { recentSessions: [] };
+  const state = {
+    recentSessions: [],
+    activityDays: [],
+    activityMaxSeconds: 0
+  };
 
   function formatDuration(total) {
     const sec = Math.max(0, Math.floor(total));
@@ -144,6 +167,113 @@
 
   function cssRgb(varName) {
     return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
+  }
+
+  function activityAlphas() {
+    const isDark = document.documentElement.classList.contains("dark");
+    return isDark ? [0.16, 0.28, 0.42, 0.6] : [0.2, 0.35, 0.55, 0.78];
+  }
+
+  function activityColor(seconds, maxSeconds) {
+    if (!seconds || maxSeconds <= 0) return "rgb(var(--gb-bg1-rgb))";
+    const levels = activityAlphas();
+    const ratio = seconds / maxSeconds;
+    if (ratio <= 0.25) return `rgb(var(--gb-green-rgb) / ${levels[0]})`;
+    if (ratio <= 0.5) return `rgb(var(--gb-green-rgb) / ${levels[1]})`;
+    if (ratio <= 0.75) return `rgb(var(--gb-green-rgb) / ${levels[2]})`;
+    return `rgb(var(--gb-green-rgb) / ${levels[3]})`;
+  }
+
+  function paintActivityLegend() {
+    const levels = activityAlphas();
+    const colors = [
+      "rgb(var(--gb-bg1-rgb))",
+      `rgb(var(--gb-green-rgb) / ${levels[0]})`,
+      `rgb(var(--gb-green-rgb) / ${levels[1]})`,
+      `rgb(var(--gb-green-rgb) / ${levels[2]})`,
+      `rgb(var(--gb-green-rgb) / ${levels[3]})`
+    ];
+    colors.forEach((color, idx) => {
+      const el = document.getElementById(`activityLegend${idx}`);
+      if (el) el.style.backgroundColor = color;
+    });
+  }
+
+  function renderActivityGrid(days, maxSeconds) {
+    const gridHost = document.getElementById("activityGrid");
+    const empty = document.getElementById("activityEmpty");
+    gridHost.innerHTML = "";
+    if (!days.length || maxSeconds <= 0) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    const firstWeekday = new Date(`${days[0].date}T00:00:00Z`).getUTCDay();
+    const paddedDays = [
+      ...Array(firstWeekday).fill(null),
+      ...days
+    ];
+    const trailingPad = (7 - (paddedDays.length % 7)) % 7;
+    for (let i = 0; i < trailingPad; i += 1) paddedDays.push(null);
+
+    const columns = [];
+    for (let i = 0; i < paddedDays.length; i += 7) {
+      columns.push(paddedDays.slice(i, i + 7));
+    }
+
+    const monthRow = document.createElement("div");
+    monthRow.className = "flex gap-1 mb-1 ml-8 text-[10px] text-gb-fg/70";
+    for (const col of columns) {
+      const firstNonNull = col.find((item) => item);
+      const firstDate = firstNonNull ? new Date(`${firstNonNull.date}T00:00:00Z`) : null;
+      const label = firstDate && firstDate.getUTCDate() <= 7
+        ? firstDate.toLocaleDateString(undefined, { month: "short" })
+        : "";
+      const slot = document.createElement("div");
+      slot.className = "w-4 text-center";
+      slot.textContent = label;
+      monthRow.appendChild(slot);
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "inline-flex gap-1";
+
+    const dayLabels = document.createElement("div");
+    dayLabels.className = "grid gap-1 text-[10px] text-gb-fg/70 mr-2";
+    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((name) => {
+      const item = document.createElement("div");
+      item.className = "h-4 leading-4";
+      item.textContent = name;
+      dayLabels.appendChild(item);
+    });
+    wrapper.appendChild(dayLabels);
+
+    const columnsWrap = document.createElement("div");
+    columnsWrap.className = "flex gap-1";
+    for (const col of columns) {
+      const colEl = document.createElement("div");
+      colEl.className = "grid gap-1";
+      for (let i = 0; i < 7; i += 1) {
+        const day = col[i];
+        const cell = document.createElement("div");
+        cell.className = "w-4 h-4 rounded-sm";
+        if (day) {
+          const localDate = new Date(`${day.date}T00:00:00Z`).toLocaleDateString();
+          const hours = (day.seconds / 3600).toFixed(2);
+          cell.style.backgroundColor = activityColor(day.seconds, maxSeconds);
+          cell.title = `${localDate} — ${hours}h`;
+        } else {
+          cell.style.backgroundColor = "rgb(var(--gb-bg1-rgb))";
+        }
+        colEl.appendChild(cell);
+      }
+      columnsWrap.appendChild(colEl);
+    }
+    wrapper.appendChild(columnsWrap);
+
+    gridHost.appendChild(monthRow);
+    gridHost.appendChild(wrapper);
   }
 
   async function postJson(url, body = {}) {
@@ -298,21 +428,28 @@
   }
 
   async function loadPageData() {
-    const [statsRes, recentRes] = await Promise.all([
+    const [statsRes, recentRes, activityRes] = await Promise.all([
       fetch(`/api/users/${targetUserId}/stats`),
-      fetch(`/api/users/${targetUserId}/recent-sessions`)
+      fetch(`/api/users/${targetUserId}/recent-sessions`),
+      fetch(`/api/users/${targetUserId}/activity-grid?days=140`)
     ]);
 
     const statsData = await statsRes.json();
     const recentData = await recentRes.json();
+    const activityData = await activityRes.json();
 
     if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
     if (!recentRes.ok) throw new Error(recentData.error || "Could not load recent sessions");
+    if (!activityRes.ok) throw new Error(activityData.error || "Could not load activity grid");
 
     renderCategoryChart(statsData.categories || []);
     state.recentSessions = recentData.sessions || [];
+    state.activityDays = activityData.days || [];
+    state.activityMaxSeconds = activityData.max_seconds || 0;
     renderRecentTable(filterRecentSessions());
     renderDurationChart(state.recentSessions);
+    paintActivityLegend();
+    renderActivityGrid(state.activityDays, state.activityMaxSeconds);
   }
 
   document.getElementById("recentSearchInput").addEventListener("input", () => {
@@ -353,7 +490,16 @@
     });
   }
 
+  document.querySelectorAll(".theme-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      paintActivityLegend();
+      renderActivityGrid(state.activityDays, state.activityMaxSeconds);
+    });
+  });
+
+  paintActivityLegend();
   loadPageData().catch(() => {
+    document.getElementById("activityEmpty").classList.remove("hidden");
     document.getElementById("categoryEmpty").classList.remove("hidden");
     document.getElementById("durationEmpty").classList.remove("hidden");
     document.getElementById("recentEmpty").classList.remove("hidden");

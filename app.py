@@ -105,6 +105,7 @@ def create_app() -> Flask:
                 username TEXT NOT NULL UNIQUE COLLATE NOCASE,
                 code_hash TEXT NOT NULL,
                 login_code TEXT,
+                notify_on_collab_starts INTEGER NOT NULL DEFAULT 1,
                 created_ts INTEGER NOT NULL
             );
 
@@ -136,6 +137,10 @@ def create_app() -> Flask:
         }
         if "login_code" not in user_columns:
             db.execute("ALTER TABLE users ADD COLUMN login_code TEXT")
+        if "notify_on_collab_starts" not in user_columns:
+            db.execute(
+                "ALTER TABLE users ADD COLUMN notify_on_collab_starts INTEGER NOT NULL DEFAULT 1"
+            )
 
         for cat in DEFAULT_CATEGORIES:
             db.execute("INSERT OR IGNORE INTO categories(name) VALUES(?)", (cat,))
@@ -179,6 +184,109 @@ def create_app() -> Flask:
         return db.execute(
             "SELECT id, username FROM users WHERE id = ?", (user_id,)
         ).fetchone()
+
+    def collaborator_presence_rows(current_ts: int, exclude_user_id: int):
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT
+                s.id,
+                s.user_id,
+                s.note,
+                s.start_ts,
+                s.end_ts,
+                s.status,
+                s.paused_seconds,
+                s.pause_started_ts,
+                u.username,
+                c.name AS category_name
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            JOIN categories c ON c.id = s.category_id
+            WHERE s.status IN ('running', 'paused')
+              AND s.user_id != ?
+            ORDER BY s.start_ts DESC
+            """,
+            (exclude_user_id,),
+        ).fetchall()
+        return [
+            {
+                "session_id": row["id"],
+                "user_id": row["user_id"],
+                "username": row["username"],
+                "category_name": row["category_name"],
+                "note": row["note"] or "",
+                "status": row["status"],
+                "start_ts": row["start_ts"],
+                "elapsed_seconds": elapsed_seconds(row, current_ts),
+            }
+            for row in rows
+        ]
+
+    def started_session_events(since_ts: int, exclude_user_id: int):
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT
+                s.id AS session_id,
+                s.user_id,
+                s.created_ts,
+                s.note,
+                u.username,
+                c.name AS category_name
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            JOIN categories c ON c.id = s.category_id
+            WHERE s.user_id != ?
+              AND s.created_ts >= ?
+            ORDER BY s.created_ts ASC, s.id ASC
+            """,
+            (exclude_user_id, since_ts),
+        ).fetchall()
+        return [
+            {
+                "session_id": row["session_id"],
+                "user_id": row["user_id"],
+                "username": row["username"],
+                "category_name": row["category_name"],
+                "note": row["note"] or "",
+                "start_ts": row["created_ts"],
+            }
+            for row in rows
+        ]
+
+    def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
+        db = get_db()
+        if days < 1:
+            return []
+        days = min(days, 366)
+        today_iso = datetime.fromtimestamp(current_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        rows = db.execute(
+            """
+            WITH RECURSIVE dates(day) AS (
+                SELECT date(?, ?)
+                UNION ALL
+                SELECT date(day, '+1 day') FROM dates WHERE day < date(?)
+            ),
+            totals AS (
+                SELECT
+                    date(end_ts, 'unixepoch') AS day,
+                    SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
+                FROM sessions
+                WHERE user_id = ?
+                  AND status = 'completed'
+                  AND end_ts IS NOT NULL
+                  AND date(end_ts, 'unixepoch') >= date(?, ?)
+                GROUP BY date(end_ts, 'unixepoch')
+            )
+            SELECT dates.day, COALESCE(totals.seconds, 0) AS seconds
+            FROM dates
+            LEFT JOIN totals ON totals.day = dates.day
+            ORDER BY dates.day ASC
+            """,
+            (today_iso, f"-{days - 1} days", today_iso, user_id, today_iso, f"-{days - 1} days"),
+        ).fetchall()
+        return [{"date": row["day"], "seconds": int(row["seconds"] or 0)} for row in rows]
 
     def category_rows_for_user(
         user_id: int | None, current_ts: int, since_ts: int | None = None
@@ -468,12 +576,40 @@ def create_app() -> Flask:
         user_id = int(session["user_id"])
         active = get_active_session(user_id)
         current_ts = now_ts()
+        collab_since_raw = request.args.get("collab_since")
+        collab_since_ts = current_ts
+        if collab_since_raw is not None:
+            try:
+                collab_since_ts = int(collab_since_raw)
+            except ValueError:
+                return jsonify({"error": "collab_since must be an integer"}), 400
+        collab_since_ts = max(0, min(collab_since_ts, current_ts))
+
+        db = get_db()
+        user_settings = db.execute(
+            "SELECT notify_on_collab_starts FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        notify_on_collab_starts = bool(user_settings["notify_on_collab_starts"]) if user_settings else True
+        team_presence = collaborator_presence_rows(current_ts, exclude_user_id=user_id)
+        new_starts = started_session_events(collab_since_ts, exclude_user_id=user_id)
         if not active:
-            return jsonify({"current_session": None, "server_ts": current_ts})
+            return jsonify(
+                {
+                    "current_session": None,
+                    "server_ts": current_ts,
+                    "team_presence": team_presence,
+                    "new_starts": new_starts,
+                    "notify_on_collab_starts": notify_on_collab_starts,
+                }
+            )
 
         return jsonify(
             {
                 "server_ts": current_ts,
+                "team_presence": team_presence,
+                "new_starts": new_starts,
+                "notify_on_collab_starts": notify_on_collab_starts,
                 "current_session": {
                     "id": active["id"],
                     "category_name": active["category_name"],
@@ -674,7 +810,7 @@ def create_app() -> Flask:
         user_id = int(session["user_id"])
         db = get_db()
         user = db.execute(
-            "SELECT id, username, login_code FROM users WHERE id = ?",
+            "SELECT id, username, login_code, notify_on_collab_starts FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         if not user:
@@ -685,6 +821,7 @@ def create_app() -> Flask:
                     "id": user["id"],
                     "username": user["username"],
                     "login_code": user["login_code"],
+                    "notify_on_collab_starts": bool(user["notify_on_collab_starts"]),
                 }
             }
         )
@@ -696,18 +833,34 @@ def create_app() -> Flask:
         username, username_error = parse_username(payload.get("username"))
         if username_error:
             return jsonify({"error": username_error}), 400
+        notify_on_collab_starts = payload.get("notify_on_collab_starts")
+        if not isinstance(notify_on_collab_starts, bool):
+            return jsonify({"error": "notify_on_collab_starts must be a boolean"}), 400
 
         user_id = int(session["user_id"])
         db = get_db()
         try:
             db.execute(
-                "UPDATE users SET username = ? WHERE id = ?",
-                (username, user_id),
+                """
+                UPDATE users
+                SET username = ?, notify_on_collab_starts = ?
+                WHERE id = ?
+                """,
+                (username, int(notify_on_collab_starts), user_id),
             )
             db.commit()
         except sqlite3.IntegrityError:
             return jsonify({"error": "That username is already taken"}), 400
-        return jsonify({"ok": True, "user": {"id": user_id, "username": username}})
+        return jsonify(
+            {
+                "ok": True,
+                "user": {
+                    "id": user_id,
+                    "username": username,
+                    "notify_on_collab_starts": notify_on_collab_starts,
+                },
+            }
+        )
 
     @app.post("/api/user/settings/reset-login-code")
     @login_required
@@ -804,6 +957,33 @@ def create_app() -> Flask:
             {
                 "user": {"id": target_user["id"], "username": target_user["username"]},
                 "sessions": recent_sessions_for_user(user_id),
+            }
+        )
+
+    @app.get("/api/users/<int:user_id>/activity-grid")
+    @login_required
+    def api_user_activity_grid(user_id: int):
+        target_user = get_user_by_id(user_id)
+        if not target_user:
+            return jsonify({"error": "User not found"}), 404
+
+        days_raw = request.args.get("days")
+        days = 140
+        if days_raw is not None:
+            try:
+                days = int(days_raw)
+            except ValueError:
+                return jsonify({"error": "days must be an integer"}), 400
+            if days < 1 or days > 366:
+                return jsonify({"error": "days must be between 1 and 366"}), 400
+
+        grid_rows = user_activity_grid(user_id, now_ts(), days=days)
+        max_seconds = max((row["seconds"] for row in grid_rows), default=0)
+        return jsonify(
+            {
+                "user": {"id": target_user["id"], "username": target_user["username"]},
+                "days": grid_rows,
+                "max_seconds": max_seconds,
             }
         )
 

@@ -24,6 +24,8 @@
   </div>
 </header>
 
+<div id="collabNotifications" class="fixed right-4 bottom-4 z-40 space-y-2 max-w-sm pointer-events-none"></div>
+
 <div class="grid lg:grid-cols-3 gap-4">
   <section class="lg:col-span-2 neu-surface p-5">
     <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
@@ -73,6 +75,12 @@
       </div>
     </div>
     <p id="actionMessage" class="mt-3 text-sm text-gb-green"></p>
+    <div id="presenceSection" class="mt-3 pt-2 text-xs text-gb-fg/80 flex items-center gap-2 hidden">
+      <span class="material-symbols-rounded text-base" aria-hidden="true">groups</span>
+      <div class="min-w-0 flex-1">
+        <div id="presenceList" class="flex flex-wrap items-center gap-x-2 gap-y-1"></div>
+      </div>
+    </div>
   </section>
 
   <section class="neu-surface p-5">
@@ -208,11 +216,16 @@
         <span class="material-symbols-rounded" aria-hidden="true">manage_accounts</span>
         Account Settings
       </h2>
-      <p class="text-sm text-gb-fg/75 mb-4">Update your username and view your login code.</p>
+      <p class="text-sm text-gb-fg/75 mb-4">Update your username, collaboration notifications, and login code.</p>
 
       <label class="block">
         <span class="text-sm text-gb-fg/85">Username</span>
         <input id="settingsUsername" maxlength="50" class="mt-1 neu-input" placeholder="Username">
+      </label>
+
+      <label class="mt-4 flex items-start gap-2 text-sm text-gb-fg/85">
+        <input id="settingsCollabNotify" type="checkbox" class="mt-1 accent-[rgb(104,157,106)]">
+        <span>Notify me when another teammate starts a session.</span>
       </label>
 
       <div class="mt-4">
@@ -246,7 +259,10 @@
     current: null,
     timerBase: 0,
     recentSessions: [],
-    settings: null
+    settings: null,
+    collabSinceTs: null,
+    collabInitialized: false,
+    shownStartNotifications: new Set()
   };
 
   function formatDuration(total) {
@@ -307,6 +323,37 @@
     box.title = masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`;
   }
 
+  function showCollabNotification(text) {
+    const host = document.getElementById("collabNotifications");
+    const toast = document.createElement("div");
+    toast.className = "neu-surface px-3 py-2 text-sm text-gb-fg pointer-events-auto";
+    toast.textContent = text;
+    host.appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+    }, 5500);
+  }
+
+  function renderPresence(rows) {
+    const section = document.getElementById("presenceSection");
+    const list = document.getElementById("presenceList");
+    list.innerHTML = "";
+    if (!rows.length) {
+      section.classList.add("hidden");
+      return;
+    }
+    section.classList.remove("hidden");
+    for (const row of rows) {
+      const entry = document.createElement("a");
+      entry.href = `/users/${row.user_id}`;
+      entry.className = "underline decoration-dotted underline-offset-2 hover:text-gb-blue";
+      const statusText = row.status === "paused" ? "paused" : "running";
+      entry.textContent = `${row.username} (${statusText}: ${row.category_name})`;
+      entry.title = `${row.username} is ${statusText} on ${row.category_name}${row.note ? ` — ${row.note}` : ""}`;
+      list.appendChild(entry);
+    }
+  }
+
   function closeSettingsModal() {
     document.getElementById("settingsModal").classList.add("hidden");
     setSettingsMessage("");
@@ -321,6 +368,7 @@
     if (!res.ok) throw new Error(data.error || "Could not load settings");
     state.settings = data.user;
     document.getElementById("settingsUsername").value = state.settings.username || "";
+    document.getElementById("settingsCollabNotify").checked = !!state.settings.notify_on_collab_starts;
     const headerName = document.getElementById("headerUsername");
     if (headerName && state.settings.username) headerName.textContent = state.settings.username;
     setLoginCodeDisplay(true);
@@ -380,10 +428,31 @@
   }
 
   async function loadStatus() {
-    const res = await fetch("/api/status");
+    const statusUrl = state.collabSinceTs === null
+      ? "/api/status"
+      : `/api/status?collab_since=${state.collabSinceTs}`;
+    const res = await fetch(statusUrl);
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load session status");
     state.current = data.current_session;
     state.timerBase = state.current ? state.current.elapsed_seconds : 0;
+    state.collabSinceTs = data.server_ts || state.collabSinceTs;
+    renderPresence(data.team_presence || []);
+
+    if (!state.collabInitialized) {
+      for (const event of data.new_starts || []) {
+        state.shownStartNotifications.add(event.session_id);
+      }
+      state.collabInitialized = true;
+    } else {
+      for (const event of data.new_starts || []) {
+        if (state.shownStartNotifications.has(event.session_id)) continue;
+        state.shownStartNotifications.add(event.session_id);
+        if (!data.notify_on_collab_starts) continue;
+        const detail = event.note ? `${event.category_name} — ${event.note}` : event.category_name;
+        showCollabNotification(`${event.username} started: ${detail}`);
+      }
+    }
     renderSession();
   }
 
@@ -707,9 +776,15 @@
 
   document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
     const username = document.getElementById("settingsUsername").value.trim();
+    const notifyOnCollabStarts = document.getElementById("settingsCollabNotify").checked;
     try {
-      const data = await postJson("/api/user/settings", { username });
-      if (state.settings) state.settings.username = data.user.username;
+      const data = await postJson("/api/user/settings", {
+        username,
+        notify_on_collab_starts: notifyOnCollabStarts
+      });
+      if (!state.settings) state.settings = {};
+      state.settings.username = data.user.username;
+      state.settings.notify_on_collab_starts = !!data.user.notify_on_collab_starts;
       const headerName = document.getElementById("headerUsername");
       if (headerName) headerName.textContent = data.user.username;
       setSettingsMessage("Settings updated.");

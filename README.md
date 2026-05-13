@@ -1,5 +1,7 @@
 # TimeStat
 
+![TimeStat logo](static/logo.svg)
+
 Minimal Flask + SQLite web app for tracking cyber competition preparation time, with a live leaderboard and category breakdown charts.
 
 ## Run locally
@@ -26,6 +28,9 @@ Open http://127.0.0.1:5000
 - Recent session history with search/category filters
 - Edit past completed sessions (category + note)
 - Settings modal for username updates, login-code reveal-on-hover, and login-code reset
+- Collaboration presence strip showing teammates currently tracking
+- Optional notifications when teammates start a session (toggle in settings)
+- User profile activity grid (GitHub-style daily heatmap over recent weeks)
 - Mobile-friendly responsive tables and empty-state messaging
 - Remove past completed sessions
 
