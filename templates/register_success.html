@@ -11,7 +11,7 @@
         <span class="material-symbols-rounded" aria-hidden="true">verified</span>
         Account ready
       </h1>
-      <p class="text-sm mt-2 text-gb-fg/80">Save this code now. You will use it to sign in as <span class="font-semibold">{{ username }}</span>.</p>
+      <p class="text-sm mt-2 text-gb-fg/80">Save this code now. You are signed in as <span class="font-semibold">{{ username }}</span>, and this code is required for future sign-ins.</p>
     </div>
 
     <div class="neu-inset p-4 text-center">
@@ -22,9 +22,9 @@
       <div class="text-4xl tracking-widest font-bold text-gb-green">{{ six_digit_code }}</div>
     </div>
 
-    <a href="{{ url_for('login') }}" class="mt-5 w-full text-center neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center justify-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">login</span>
-      Go to sign in
+    <a href="{{ url_for('dashboard') }}" class="mt-5 w-full text-center neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center justify-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+      Continue to dashboard
     </a>
   </div>
 </div>

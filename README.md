@@ -32,6 +32,12 @@ python app.py
 
 Open: http://127.0.0.1:5000
 
+## Regression tests
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
 ## Environment variables
 
 All supported env values are in `deploy/timestat.env.example`.

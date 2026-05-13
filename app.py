@@ -546,10 +546,9 @@ def create_app() -> Flask:
                 s.paused_seconds,
                 s.pause_started_ts,
                 u.username,
-                c.name AS category_name
+                s.category_name
             FROM sessions s
             JOIN users u ON u.id = s.user_id
-            JOIN categories c ON c.id = s.category_id
             WHERE s.status IN ('running', 'paused')
               AND s.user_id != ?
             ORDER BY s.start_ts DESC
@@ -580,10 +579,9 @@ def create_app() -> Flask:
                 s.created_ts,
                 s.note,
                 u.username,
-                c.name AS category_name
+                s.category_name
             FROM sessions s
             JOIN users u ON u.id = s.user_id
-            JOIN categories c ON c.id = s.category_id
             WHERE s.user_id != ?
               AND s.created_ts >= ?
             ORDER BY s.created_ts ASC, s.id ASC
@@ -836,7 +834,7 @@ def create_app() -> Flask:
         six_digit_code = generate_login_code()
         db = get_db()
         try:
-            db.execute(
+            cursor = db.execute(
                 """
                 INSERT INTO users(username, code_hash, login_code, created_ts)
                 VALUES(?, ?, ?, ?)
@@ -853,6 +851,9 @@ def create_app() -> Flask:
             flash("That username is already taken.", "error")
             return redirect(url_for("register"))
 
+        session.clear()
+        session["user_id"] = int(cursor.lastrowid)
+        rotate_csrf_token()
         return render_template(
             "register_success.html", username=username, six_digit_code=six_digit_code
         )
