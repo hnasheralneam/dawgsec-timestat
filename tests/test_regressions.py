@@ -1,5 +1,6 @@
 import os
 import re
+import sqlite3
 import tempfile
 import unittest
 
@@ -76,6 +77,48 @@ class TimeStatRegressionTests(unittest.TestCase):
         self.assertEqual(len(payload["team_presence"]), 1)
         self.assertEqual(payload["team_presence"][0]["username"], "runner")
         self.assertEqual(payload["team_presence"][0]["category_name"], "Research")
+
+    def test_recent_sessions_full_history_query_supports_search_dataset(self):
+        self._register_and_sign_in("history-user")
+        with sqlite3.connect(self.db_path) as db:
+            user_row = db.execute(
+                "SELECT id FROM users WHERE username = ?",
+                ("history-user",),
+            ).fetchone()
+            self.assertIsNotNone(user_row)
+            user_id = int(user_row[0])
+            for idx in range(12):
+                start_ts = 1_700_000_000 + (idx * 120)
+                end_ts = start_ts + 60
+                db.execute(
+                    """
+                    INSERT INTO sessions(
+                        user_id,
+                        category_name,
+                        note,
+                        start_ts,
+                        end_ts,
+                        paused_seconds,
+                        status,
+                        pause_started_ts,
+                        created_ts
+                    )
+                    VALUES(?, 'Other', ?, ?, ?, 0, 'completed', NULL, ?)
+                    """,
+                    (user_id, f"task-{idx}", start_ts, end_ts, start_ts),
+                )
+            db.commit()
+
+        recent_only = self.client.get("/api/recent-sessions")
+        self.assertEqual(recent_only.status_code, 200)
+        self.assertEqual(len(recent_only.get_json()["sessions"]), 10)
+
+        full_history = self.client.get("/api/recent-sessions?full=1")
+        self.assertEqual(full_history.status_code, 200)
+        self.assertEqual(len(full_history.get_json()["sessions"]), 12)
+
+        invalid_full = self.client.get("/api/recent-sessions?full=maybe")
+        self.assertEqual(invalid_full.status_code, 400)
 
 
 if __name__ == "__main__":

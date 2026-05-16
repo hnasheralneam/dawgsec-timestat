@@ -322,6 +322,18 @@ def create_app() -> Flask:
             return None, f"category_name must be {CATEGORY_MAX_LENGTH} characters or fewer"
         return category_name, None
 
+    def parse_bool_query_arg(
+        raw_value: str | None, *, field_name: str
+    ) -> tuple[bool | None, str | None]:
+        if raw_value is None:
+            return None, None
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True, None
+        if normalized in {"0", "false", "no", "off"}:
+            return False, None
+        return None, f"{field_name} must be a boolean"
+
     def elapsed_seconds(row: sqlite3.Row, current_ts: int) -> int:
         end_ts = row["end_ts"] if row["end_ts"] is not None else current_ts
         elapsed = end_ts - row["start_ts"] - row["paused_seconds"]
@@ -775,10 +787,9 @@ def create_app() -> Flask:
             row["rank"] = idx
         return rows
 
-    def recent_sessions_for_user(user_id: int, limit: int = 10):
+    def recent_sessions_for_user(user_id: int, limit: int | None = 10):
         db = get_db()
-        rows = db.execute(
-            """
+        query = """
             SELECT
                 s.id,
                 s.category_name,
@@ -789,10 +800,14 @@ def create_app() -> Flask:
             FROM sessions s
             WHERE s.user_id = ? AND s.status = 'completed'
             ORDER BY s.id DESC
-            LIMIT ?
-            """,
-            (user_id, limit),
-        ).fetchall()
+        """
+        params: tuple[int] | tuple[int, int]
+        if limit is None:
+            params = (user_id,)
+        else:
+            query = f"{query}\nLIMIT ?"
+            params = (user_id, limit)
+        rows = db.execute(query, params).fetchall()
 
         sessions_payload = []
         for row in rows:
@@ -1543,7 +1558,13 @@ def create_app() -> Flask:
     @login_required
     def api_recent_sessions():
         user_id = int(session["user_id"])
-        return jsonify({"sessions": recent_sessions_for_user(user_id)})
+        include_full, full_error = parse_bool_query_arg(
+            request.args.get("full"), field_name="full"
+        )
+        if full_error:
+            return jsonify({"error": full_error}), 400
+        limit = None if include_full else 10
+        return jsonify({"sessions": recent_sessions_for_user(user_id, limit=limit)})
 
     @app.get("/api/users/<int:user_id>/stats")
     @login_required
@@ -1565,10 +1586,16 @@ def create_app() -> Flask:
         target_user = get_user_by_id(user_id)
         if not target_user:
             return jsonify({"error": "User not found"}), 404
+        include_full, full_error = parse_bool_query_arg(
+            request.args.get("full"), field_name="full"
+        )
+        if full_error:
+            return jsonify({"error": full_error}), 400
+        limit = None if include_full else 10
         return jsonify(
             {
                 "user": {"id": target_user["id"], "username": target_user["username"]},
-                "sessions": recent_sessions_for_user(user_id),
+                "sessions": recent_sessions_for_user(user_id, limit=limit),
             }
         )
 

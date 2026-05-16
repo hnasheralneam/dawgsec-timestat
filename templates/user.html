@@ -139,6 +139,13 @@
       </table>
     </div>
     <p id="recentEmpty" class="hidden mt-3 empty-state">No completed sessions match the current filters.</p>
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 10 most recent tasks.</p>
+      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" title="Expand to all completed tasks for this user">
+        <span class="material-symbols-rounded" aria-hidden="true">history</span>
+        View full history
+      </button>
+    </div>
   </section>
 </div>
 
@@ -149,6 +156,8 @@
   let durationChart = null;
   const state = {
     recentSessions: [],
+    recentSessionsAll: null,
+    fullHistoryMode: false,
     activityDays: [],
     activityMaxSeconds: 0
   };
@@ -347,22 +356,60 @@
   function filterRecentSessions() {
     const query = document.getElementById("recentSearchInput").value.trim().toLowerCase();
     const category = document.getElementById("recentCategoryFilter").value.trim().toLowerCase();
-    return state.recentSessions.filter((s) => {
+    const source = state.recentSessionsAll || state.recentSessions;
+    return source.filter((s) => {
       const matchesQuery = !query || s.note.toLowerCase().includes(query) || s.category_name.toLowerCase().includes(query);
       const matchesCategory = !category || s.category_name.toLowerCase() === category;
       return matchesQuery && matchesCategory;
     });
   }
 
+  function hasActiveRecentFilters() {
+    return Boolean(
+      document.getElementById("recentSearchInput").value.trim()
+      || document.getElementById("recentCategoryFilter").value.trim()
+    );
+  }
+
+  function updateRecentHistoryControls(filteredCount) {
+    const btn = document.getElementById("viewFullHistoryBtn");
+    const hint = document.getElementById("recentHistoryHint");
+    if (state.fullHistoryMode) {
+      btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history_toggle_off</span>Show recent only`;
+      hint.textContent = filteredCount
+        ? `Showing all matching tasks (${filteredCount}).`
+        : "Showing full task history.";
+      return;
+    }
+    btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history</span>View full history`;
+    if (hasActiveRecentFilters()) {
+      hint.textContent = "Search scans full task history for this user.";
+    } else {
+      hint.textContent = "Showing 10 most recent tasks.";
+    }
+  }
+
+  async function ensureFullHistoryLoaded(force = false) {
+    if (state.recentSessionsAll && !force) return;
+    const res = await fetch(`/api/users/${targetUserId}/recent-sessions?full=1`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load full history");
+    state.recentSessionsAll = data.sessions || [];
+  }
+
   function renderRecentTable(sessions) {
     const tbody = document.getElementById("recentBody");
+    const visibleSessions = state.fullHistoryMode || hasActiveRecentFilters()
+      ? sessions
+      : sessions.slice(0, 10);
+    updateRecentHistoryControls(sessions.length);
     tbody.innerHTML = "";
-    if (!sessions.length) {
+    if (!visibleSessions.length) {
       document.getElementById("recentEmpty").classList.remove("hidden");
       return;
     }
     document.getElementById("recentEmpty").classList.add("hidden");
-    for (const s of sessions) {
+    for (const s of visibleSessions) {
       const safeCategoryName = escapeHtml(s.category_name || "");
       const safeNote = escapeHtml(s.note || "");
       const safeStart = escapeHtml(tsToLocal(s.start_ts));
@@ -463,6 +510,9 @@
 
     renderCategoryChart(statsData.categories || []);
     state.recentSessions = recentData.sessions || [];
+    if (state.recentSessionsAll || state.fullHistoryMode || hasActiveRecentFilters()) {
+      await ensureFullHistoryLoaded(true);
+    }
     state.activityDays = activityData.days || [];
     state.activityMaxSeconds = activityData.max_seconds || 0;
     renderRecentTable(filterRecentSessions());
@@ -471,17 +521,49 @@
     renderActivityGrid(state.activityDays, state.activityMaxSeconds);
   }
 
-  document.getElementById("recentSearchInput").addEventListener("input", () => {
+  document.getElementById("recentSearchInput").addEventListener("input", async () => {
+    if (hasActiveRecentFilters()) {
+      try {
+        await ensureFullHistoryLoaded();
+      } catch (err) {
+        alert(err.message || "Could not load full history");
+        return;
+      }
+    }
     renderRecentTable(filterRecentSessions());
   });
 
-  document.getElementById("recentCategoryFilter").addEventListener("change", () => {
+  document.getElementById("recentCategoryFilter").addEventListener("change", async () => {
+    if (hasActiveRecentFilters()) {
+      try {
+        await ensureFullHistoryLoaded();
+      } catch (err) {
+        alert(err.message || "Could not load full history");
+        return;
+      }
+    }
     renderRecentTable(filterRecentSessions());
   });
 
   document.getElementById("clearRecentFiltersBtn").addEventListener("click", () => {
     document.getElementById("recentSearchInput").value = "";
     document.getElementById("recentCategoryFilter").value = "";
+    state.fullHistoryMode = false;
+    renderRecentTable(filterRecentSessions());
+  });
+
+  document.getElementById("viewFullHistoryBtn").addEventListener("click", async () => {
+    if (!state.fullHistoryMode) {
+      try {
+        await ensureFullHistoryLoaded();
+      } catch (err) {
+        alert(err.message || "Could not load full history");
+        return;
+      }
+      state.fullHistoryMode = true;
+    } else {
+      state.fullHistoryMode = false;
+    }
     renderRecentTable(filterRecentSessions());
   });
 
