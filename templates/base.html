@@ -188,6 +188,29 @@
       line-height: 1;
       vertical-align: middle;
     }
+
+    .custom-tooltip {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 9999;
+      pointer-events: none;
+      background: rgb(var(--gb-fg-rgb));
+      color: rgb(var(--gb-bg0-rgb));
+      padding: 0.35rem 0.6rem;
+      border-radius: 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      max-width: 16rem;
+      opacity: 0;
+      transform: translate(-9999px, -9999px);
+      transition: opacity 0.1s ease;
+      box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb));
+    }
+
+    .custom-tooltip.is-visible {
+      opacity: 1;
+    }
   </style>
 </head>
 <body class="min-h-screen">
@@ -229,7 +252,8 @@
           if (!icon) return;
           icon.textContent = isDark ? "light_mode" : "dark_mode";
           const titleText = isDark ? "Switch to light mode" : "Switch to dark mode";
-          toggleBtn.title = titleText;
+          toggleBtn.setAttribute("data-tooltip", titleText);
+          toggleBtn.removeAttribute("title");
           toggleBtn.setAttribute("aria-label", titleText);
         });
       };
@@ -244,6 +268,90 @@
           applyThemeUi();
         });
       });
+
+      const tooltip = document.createElement("div");
+      tooltip.id = "customTooltip";
+      tooltip.className = "custom-tooltip";
+      tooltip.setAttribute("role", "tooltip");
+      document.body.appendChild(tooltip);
+
+      let activeTarget = null;
+      let activeText = "";
+      let lastPointerEvent = null;
+
+      const showTooltip = (target) => {
+        const text = target.getAttribute("data-tooltip");
+        if (!text) return;
+        activeTarget = target;
+        activeText = text;
+        tooltip.textContent = text;
+        tooltip.classList.add("is-visible");
+      };
+
+      const hideTooltip = () => {
+        activeTarget = null;
+        tooltip.classList.remove("is-visible");
+      };
+
+      const updatePosition = (event) => {
+        if (!activeTarget) return;
+        if (!event || typeof event.clientX !== "number") return;
+        lastPointerEvent = event;
+        const text = activeTarget.getAttribute("data-tooltip");
+        if (text !== activeText) {
+          activeText = text;
+          tooltip.textContent = text;
+        }
+        const offset = 12;
+        const padding = 10;
+        let x = event.clientX + offset;
+        let y = event.clientY + offset;
+        const rect = tooltip.getBoundingClientRect();
+        if (x + rect.width > window.innerWidth - padding) {
+          x = Math.max(padding, window.innerWidth - rect.width - padding);
+        }
+        if (y + rect.height > window.innerHeight - padding) {
+          y = Math.max(padding, window.innerHeight - rect.height - padding);
+        }
+        tooltip.style.transform = `translate(${x}px, ${y}px)`;
+      };
+
+      document.addEventListener("mouseover", (event) => {
+        if (!(event.target instanceof Element)) return;
+        const target = event.target.closest("[data-tooltip]");
+        if (!target) return;
+        if (target === activeTarget) {
+          updatePosition(event);
+          return;
+        }
+        showTooltip(target);
+        updatePosition(event);
+      });
+
+      document.addEventListener("mousemove", updatePosition, { passive: true });
+
+      document.addEventListener("mouseout", (event) => {
+        if (!activeTarget) return;
+        if (event.relatedTarget instanceof Element && activeTarget.contains(event.relatedTarget)) return;
+        const nextTarget =
+          event.relatedTarget instanceof Element
+            ? event.relatedTarget.closest("[data-tooltip]")
+            : null;
+        if (nextTarget) {
+          showTooltip(nextTarget);
+          if (lastPointerEvent) updatePosition(lastPointerEvent);
+          return;
+        }
+        hideTooltip();
+      });
+
+      document.addEventListener(
+        "scroll",
+        () => {
+          if (activeTarget) hideTooltip();
+        },
+        true
+      );
     })();
   </script>
 </body>

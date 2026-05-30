@@ -9,7 +9,7 @@
     <p class="text-sm text-gb-fg/75">Delete users or selectively remove their tasks.</p>
   </div>
   <div class="flex items-center flex-wrap gap-2">
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
       <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
     <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
@@ -95,7 +95,7 @@
       required
       class="neu-input"
       placeholder="Add a new category name"
-      title="This category will appear in user dashboards"
+      data-tooltip="This category will appear in user dashboards"
     >
     <button class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-1 justify-center" type="submit">
       <span class="material-symbols-rounded" aria-hidden="true">add</span>
@@ -279,7 +279,7 @@
           <input type="checkbox" data-task-id="${task.id}">
         </td>
         <td class="py-2" data-label="Category">${safeCategory}</td>
-        <td class="py-2" data-label="Note" title="${safeNote || "No note"}">${safeNote || "-"}</td>
+        <td class="py-2" data-label="Note" data-tooltip="${safeNote || "No note"}">${safeNote || "-"}</td>
         <td class="py-2" data-label="Status">${safeStatus}</td>
         <td class="py-2" data-label="Duration">${safeDuration}</td>
         <td class="py-2" data-label="Started">${safeStart}</td>

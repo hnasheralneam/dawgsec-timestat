@@ -1362,6 +1362,39 @@ def create_app() -> Flask:
         db.commit()
         return jsonify({"ok": True})
 
+    @app.post("/api/session/adjust")
+    @login_required
+    def api_adjust_session():
+        payload = request.get_json(silent=True) or {}
+        seconds = payload.get("seconds")
+        if not isinstance(seconds, int):
+            return jsonify({"error": "seconds must be an integer"}), 400
+        if seconds <= 0:
+            return jsonify({"error": "seconds must be greater than zero"}), 400
+
+        user_id = int(session["user_id"])
+        active = get_active_session(user_id)
+        if not active:
+            return jsonify({"error": "No active session to adjust"}), 400
+
+        current_ts = now_ts()
+        available = elapsed_seconds(active, current_ts)
+        if seconds > available:
+            minutes = seconds // 60
+            unit = "minutes" if minutes != 1 else "minute"
+            label = f"{minutes} {unit}" if minutes else f"{seconds} seconds"
+            return jsonify({"error": f"Not enough elapsed time to remove {label}."}), 400
+
+        db = get_db()
+        db.execute(
+            "UPDATE sessions SET paused_seconds = paused_seconds + ? WHERE id = ?",
+            (seconds, active["id"]),
+        )
+        db.commit()
+        return jsonify(
+            {"ok": True, "removed_seconds": seconds, "remaining_seconds": available - seconds}
+        )
+
     @app.post("/api/session/delete")
     @login_required
     def api_delete_session():

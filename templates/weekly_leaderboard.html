@@ -9,19 +9,19 @@
     <p class="text-sm text-gb-fg/75">Top tracked time for the last 7 days.</p>
   </div>
   <div class="flex items-center flex-wrap gap-2">
-    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2" title="Back to your dashboard">
+    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2" data-tooltip="Back to your dashboard">
       <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
       Back to dashboard
     </a>
-    <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-aqua text-gb-bg0 border-gb-aqua/80 inline-flex items-center gap-2" title="Open all-time stats page">
+    <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-aqua text-gb-bg0 border-gb-aqua/80 inline-flex items-center gap-2" data-tooltip="Open all-time stats page">
       <span class="material-symbols-rounded" aria-hidden="true">insights</span>
       All-Time Stats
     </a>
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
       <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
     <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" title="Sign out of your account">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" data-tooltip="Sign out of your account">
         <span class="material-symbols-rounded" aria-hidden="true">logout</span>
         Sign out
       </button>
@@ -79,12 +79,12 @@
       tr.innerHTML = `
         <td class="py-2" data-label="Rank">#${row.rank}</td>
         <td class="py-2" data-label="User">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" title="View ${row.username}'s profile">
+          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" data-tooltip="View ${row.username}'s profile">
             <span class="material-symbols-rounded" aria-hidden="true">person</span>
             ${row.username}
           </a>
         </td>
-        <td class="py-2 text-right" data-label="Hours" title="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        <td class="py-2 text-right" data-label="Hours" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }

@@ -9,14 +9,14 @@
     <p class="text-sm text-gb-fg/75">Welcome, <span id="headerUsername">{{ user.username }}</span>.</p>
   </div>
   <div class="flex items-center flex-wrap gap-2">
-    <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" type="button" title="Open account settings">
+    <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" type="button" data-tooltip="Open account settings">
       <span class="material-symbols-rounded" aria-hidden="true">settings</span>
     </button>
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
       <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
     <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" title="Sign out of your account">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" data-tooltip="Sign out of your account">
         <span class="material-symbols-rounded" aria-hidden="true">logout</span>
         Sign out
       </button>
@@ -35,47 +35,54 @@
     <div class="grid md:grid-cols-3 gap-3 items-end">
       <label class="block md:col-span-1">
         <span class="text-sm text-gb-fg/85">Activity</span>
-        <select id="categoryId" class="mt-1 neu-input" title="Select which activity this session belongs to">
+        <select id="categoryId" class="mt-1 neu-input" data-tooltip="Select the activity that most matches your task">
           {% for category in categories %}
             <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
       </label>
       <label class="block md:col-span-2">
-        <span class="text-sm text-gb-fg/85">Optional note</span>
-        <input id="sessionNote" maxlength="200" class="mt-1 neu-input" placeholder="What are you working on right now?" title="Add context that appears in your history">
+        <span class="text-sm text-gb-fg/85">Note</span>
+        <input id="sessionNote" maxlength="200" class="mt-1 neu-input" placeholder="What are you working on right now?" data-tooltip="Add context">
       </label>
     </div>
 
-    <div class="mt-4 neu-inset p-4">
-      <div class="text-sm text-gb-fg/70">Current session</div>
+    <div class="mt-4 neu-inset p-4 text-center">
+      <div id="actionMessage" class="text-sm text-gb-green mb-1"></div>
       <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
-      <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green" title="Live elapsed timer">00:00:00</div>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-4 inline-flex items-center gap-2" title="Start a new active session">
+      <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
+      <div class="mt-4">
+         <div class="flex gap-2 justify-center">
+        <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-6 inline-flex items-center gap-2" data-tooltip="Start a new active session">
           <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           Start
         </button>
-        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-4 inline-flex items-center gap-2 hidden" title="Pause the running session">
+        <button id="pauseBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 px-6 inline-flex items-center gap-2 hidden" data-tooltip="Pause the running session">
           <span class="material-symbols-rounded" aria-hidden="true">pause</span>
           Pause
         </button>
-        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-4 inline-flex items-center gap-2 hidden" title="Resume the paused session">
+        <button id="resumeBtn" class="neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-6 inline-flex items-center gap-2 hidden" data-tooltip="Resume the paused session">
           <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
           Resume
         </button>
-        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-4 inline-flex items-center gap-2 hidden" title="Finish and save the current session">
+        <button id="finishBtn" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 px-6 inline-flex items-center gap-2 hidden" data-tooltip="Finish the current session">
           <span class="material-symbols-rounded" aria-hidden="true">check_circle</span>
           Finish
         </button>
-        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-4 inline-flex items-center gap-2 hidden" title="Discard the current in-progress session">
+        <button id="cancelBtn" class="neu-btn bg-gb-purple text-gb-bg0 border-gb-purple/80 px-6 inline-flex items-center gap-2 hidden" data-tooltip="Cancel the current session">
           <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
           Cancel
+        </button></div>
+        <div text="4xl">
+        <button id="reduce10Btn" class="neu-btn bg-gb-aqua text-gb-bg0 border-gb-aqua/80 py-1 px-4 mt-3 inline-flex items-center gap-2 hidden" data-tooltip="Remove 10 minutes">
+          <span class="material-symbols-rounded" aria-hidden="true">replay_10</span>
         </button>
+        <button id="reduce30Btn" class="neu-btn bg-gb-aqua text-gb-bg0 border-gb-aqua/80 py-1 px-4 mt-3 inline-flex items-center gap-2 hidden" data-tooltip="Remove 30 minutes">
+          <span class="material-symbols-rounded" aria-hidden="true">replay_30</span>
+        </button></div>
       </div>
     </div>
-    <p id="actionMessage" class="mt-3 text-sm text-gb-green"></p>
-    <div id="presenceSection" class="mt-3 pt-2 text-xs text-gb-fg/80 flex items-center gap-2 hidden">
+    <div id="presenceSection" class="text-center mt-3 pt-2 text-xs text-gb-fg/80 flex items-center gap-2 hidden">
       <span class="material-symbols-rounded text-base" aria-hidden="true">groups</span>
       <div class="min-w-0 flex-1">
         <div id="presenceList" class="flex flex-wrap items-center gap-x-2 gap-y-1"></div>
@@ -103,11 +110,11 @@
     </div>
     <p id="weeklyLeaderboardEmpty" class="empty-state hidden mt-3">No weekly tracked time yet.</p>
     <div class="mt-3 grid sm:grid-cols-2 gap-3">
-      <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" title="View all users in weekly leaderboard">
+      <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" data-tooltip="View all users in weekly leaderboard">
         <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
         Full weekly leaderboard
       </a>
-      <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" title="Open all-time data in a separate page">
+      <a href="{{ url_for('all_time_stats') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2 justify-center" data-tooltip="Open all-time data in a separate page">
         <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
         All-time leaderboard
       </a>
@@ -141,14 +148,14 @@
       History
       </h2>
       <div class="w-full md:w-auto flex flex-col sm:flex-row sm:items-center gap-2">
-        <input id="recentSearchInput" class="neu-input text-sm w-full sm:w-72 lg:w-80 min-w-0" placeholder="Search note or category" title="Filter sessions by category or note">
-        <select id="recentCategoryFilter" class="neu-input text-sm w-full sm:w-52 min-w-0" title="Filter by category">
+        <input id="recentSearchInput" class="neu-input text-sm w-full sm:w-72 lg:w-80 min-w-0" placeholder="Search note or category" data-tooltip="Filter sessions by category or note">
+        <select id="recentCategoryFilter" class="neu-input text-sm w-full sm:w-52 min-w-0" data-tooltip="Filter by category">
           <option value="">All categories</option>
           {% for category in categories %}
             <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
-        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" title="Clear session filters">
+        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Clear session filters">
           <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
           Clear
         </button>
@@ -164,7 +171,7 @@
       <div class="grid sm:grid-cols-2 gap-3 mt-3">
         <label class="block">
           <span class="text-sm text-gb-fg/85">Category</span>
-          <select id="editCategoryName" class="mt-1 neu-input" title="Change the category for this completed session">
+          <select id="editCategoryName" class="mt-1 neu-input" data-tooltip="Change the category for this completed session">
             {% for category in categories %}
               <option value="{{ category.name }}">{{ category.name }}</option>
             {% endfor %}
@@ -172,15 +179,15 @@
         </label>
         <label class="block">
           <span class="text-sm text-gb-fg/85">Note</span>
-          <input id="editNote" maxlength="200" class="mt-1 neu-input" placeholder="Session note" title="Update the note shown in history">
+          <input id="editNote" maxlength="200" class="mt-1 neu-input" placeholder="Session note" data-tooltip="Update the note shown in history">
         </label>
       </div>
       <div class="mt-3 flex flex-wrap gap-2">
-        <button id="saveEditSessionBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" title="Save this session update">
+        <button id="saveEditSessionBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" data-tooltip="Save this session update">
           <span class="material-symbols-rounded" aria-hidden="true">save</span>
           Save
         </button>
-        <button id="cancelEditSessionBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" title="Cancel editing">
+        <button id="cancelEditSessionBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" data-tooltip="Cancel editing">
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
           Cancel
         </button>
@@ -204,7 +211,7 @@
     <p id="recentEmpty" class="empty-state hidden mt-3">No recent sessions match your filters.</p>
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
       <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing your 10 most recent tasks.</p>
-      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" title="Expand to all completed tasks">
+      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Expand to all completed tasks">
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
         View full history
       </button>
@@ -216,7 +223,7 @@
   <div id="settingsBackdrop" class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
   <div class="absolute inset-0 p-4 flex items-center justify-center">
     <section class="neu-surface w-full max-w-lg p-5 relative">
-      <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" title="Close settings">
+      <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" data-tooltip="Close settings">
         <span class="material-symbols-rounded" aria-hidden="true">close</span>
       </button>
       <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
@@ -238,20 +245,20 @@
       <div class="mt-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="text-sm text-gb-fg/85">Login code <span class="hint">(hover to reveal)</span></div>
-          <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" title="Generate a new 6-digit login code">
+          <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" data-tooltip="Generate a new 6-digit login code">
             <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
             Reset
           </button>
         </div>
-        <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" title="Hover to reveal login code">••••••</div>
+        <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" data-tooltip="Hover to reveal login code">••••••</div>
       </div>
 
       <div class="mt-4 flex flex-wrap gap-2">
-        <button id="saveSettingsBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" title="Save username changes">
+        <button id="saveSettingsBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" data-tooltip="Save username changes">
           <span class="material-symbols-rounded" aria-hidden="true">save</span>
           Save Changes
         </button>
-        <button id="cancelSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" title="Cancel and close settings">
+        <button id="cancelSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" data-tooltip="Cancel and close settings">
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
           Cancel
         </button>
@@ -325,7 +332,8 @@
   function setMessage(text, isError = false) {
     const el = document.getElementById("actionMessage");
     el.textContent = text || "";
-    el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+    el.classList.toggle("text-gb-red", isError);
+    el.classList.toggle("text-gb-green", !isError);
   }
 
   function setSettingsMessage(text, isError = false) {
@@ -338,11 +346,14 @@
     const box = document.getElementById("settingsLoginCodeBox");
     if (!state.settings || !state.settings.login_code) {
       box.textContent = "Unavailable";
-      box.title = "Login code not available for this account";
+      box.setAttribute("data-tooltip", "Login code not available for this account");
       return;
     }
     box.textContent = masked ? "••••••" : state.settings.login_code;
-    box.title = masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`;
+    box.setAttribute(
+      "data-tooltip",
+      masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`
+    );
   }
 
   function showCollabNotification(text) {
@@ -371,7 +382,10 @@
       entry.className = "underline decoration-dotted underline-offset-2 hover:text-gb-blue";
       const statusText = row.status === "paused" ? "paused" : "running";
       entry.textContent = `${row.username} (${statusText}: ${row.category_name})`;
-      entry.title = `${row.username} is ${statusText} on ${row.category_name}${row.note ? ` — ${row.note}` : ""}`;
+      entry.setAttribute(
+        "data-tooltip",
+        `${row.username} is ${statusText} on ${row.category_name}${row.note ? ` — ${row.note}` : ""}`
+      );
       list.appendChild(entry);
     }
   }
@@ -402,12 +416,15 @@
     const resume = document.getElementById("resumeBtn");
     const finish = document.getElementById("finishBtn");
     const cancel = document.getElementById("cancelBtn");
+    const reduce10 = document.getElementById("reduce10Btn");
+    const reduce30 = document.getElementById("reduce30Btn");
 
     let showStart = false;
     let showPause = false;
     let showResume = false;
     let showFinish = false;
     let showCancel = false;
+    let showReduce = false;
 
     if (!state.current) {
       showStart = true;
@@ -415,10 +432,12 @@
       showPause = true;
       showFinish = true;
       showCancel = true;
+      showReduce = true;
     } else {
       showResume = true;
       showFinish = true;
       showCancel = true;
+      showReduce = true;
     }
 
     start.disabled = !showStart;
@@ -426,12 +445,27 @@
     resume.disabled = !showResume;
     finish.disabled = !showFinish;
     cancel.disabled = !showCancel;
+    reduce10.disabled = !showReduce;
+    reduce30.disabled = !showReduce;
 
     start.classList.toggle("hidden", !showStart);
     pause.classList.toggle("hidden", !showPause);
     resume.classList.toggle("hidden", !showResume);
     finish.classList.toggle("hidden", !showFinish);
     cancel.classList.toggle("hidden", !showCancel);
+    reduce10.classList.toggle("hidden", !showReduce);
+    reduce30.classList.toggle("hidden", !showReduce);
+  }
+
+  async function adjustSession(seconds, label) {
+    if (!state.current) return;
+    try {
+      await postJson("/api/session/adjust", { seconds });
+      setMessage(`Removed ${label} from the current session.`);
+      await refreshAll();
+    } catch (err) {
+      setMessage(err.message, true);
+    }
   }
 
   function renderSession() {
@@ -499,12 +533,12 @@
       tr.innerHTML = `
         <td class="py-2" data-label="Rank">#${row.rank}</td>
         <td class="py-2" data-label="User">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" title="View ${row.username}'s profile">
+          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" data-tooltip="View ${row.username}'s profile">
             <span class="material-symbols-rounded" aria-hidden="true">person</span>
             ${row.username}
           </a>
         </td>
-        <td class="py-2 text-right" data-label="Hours" title="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        <td class="py-2 text-right" data-label="Hours" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -650,17 +684,15 @@
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
         <td class="py-2" data-label="Category">${safeCategoryName}</td>
-        <td class="py-2" data-label="Duration" title="Started ${safeStart}">${safeDuration}</td>
-        <td class="py-2" data-label="Note" title="${safeNoteTitle}">${safeNote || "-"}</td>
+        <td class="py-2" data-label="Duration" data-tooltip="Started ${safeStart}">${safeDuration}</td>
+        <td class="py-2" data-label="Note" data-tooltip="${safeNoteTitle}">${safeNote || "-"}</td>
         <td class="py-2" data-label="Ended">${safeEnd}</td>
         <td class="py-2" data-label="Actions">
-          <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" title="Edit category and note for this completed session">
+          <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit category and note">
             <span class="material-symbols-rounded" aria-hidden="true">edit</span>
-            Edit
           </button>
-          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" title="Delete this completed session">
+          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this session">
             <span class="material-symbols-rounded" aria-hidden="true">delete</span>
-            Remove
           </button>
         </td>
       `;
@@ -838,6 +870,14 @@
     } catch (err) {
       setMessage(err.message, true);
     }
+  });
+
+  document.getElementById("reduce10Btn").addEventListener("click", async () => {
+    await adjustSession(600, "10 minutes");
+  });
+
+  document.getElementById("reduce30Btn").addEventListener("click", async () => {
+    await adjustSession(1800, "30 minutes");
   });
 
   setInterval(() => {

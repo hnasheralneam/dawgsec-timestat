@@ -9,19 +9,19 @@
     <p class="text-sm text-gb-fg/75">Profile insights from tracked sessions.</p>
   </div>
   <div class="flex items-center flex-wrap gap-2">
-    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2" title="Back to your main dashboard">
+    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2" data-tooltip="Back to your main dashboard">
       <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
       Back to dashboard
     </a>
-    <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2" title="Open weekly leaderboard">
+    <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2" data-tooltip="Open weekly leaderboard">
       <span class="material-symbols-rounded" aria-hidden="true">leaderboard</span>
       Weekly Board
     </a>
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" title="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
       <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
     </button>
     <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" title="Sign out of your account">
+      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" data-tooltip="Sign out of your account">
         <span class="material-symbols-rounded" aria-hidden="true">logout</span>
         Sign out
       </button>
@@ -74,14 +74,14 @@
       Recent Sessions
       </h2>
       <div class="flex flex-wrap gap-2">
-        <input id="recentSearchInput" class="neu-input text-sm min-w-52" placeholder="Search note or category" title="Filter sessions by note or category">
-        <select id="recentCategoryFilter" class="neu-input text-sm min-w-48" title="Filter by category">
+        <input id="recentSearchInput" class="neu-input text-sm min-w-52" placeholder="Search note or category" data-tooltip="Filter sessions by note or category">
+        <select id="recentCategoryFilter" class="neu-input text-sm min-w-48" data-tooltip="Filter by category">
           <option value="">All categories</option>
           {% for category in categories %}
             <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
-        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" title="Clear active filters">
+        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Clear active filters">
           <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
           Clear
         </button>
@@ -110,11 +110,11 @@
         </label>
       </div>
       <div class="mt-3 flex flex-wrap gap-2">
-        <button id="saveEditSessionBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" title="Save this session update">
+        <button id="saveEditSessionBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" data-tooltip="Save this session update">
           <span class="material-symbols-rounded" aria-hidden="true">save</span>
           Save
         </button>
-        <button id="cancelEditSessionBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" title="Cancel editing">
+        <button id="cancelEditSessionBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" data-tooltip="Cancel editing">
           <span class="material-symbols-rounded" aria-hidden="true">close</span>
           Cancel
         </button>
@@ -141,7 +141,7 @@
     <p id="recentEmpty" class="hidden mt-3 empty-state">No completed sessions match the current filters.</p>
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
       <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 10 most recent tasks.</p>
-      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" title="Expand to all completed tasks for this user">
+      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Expand to all completed tasks for this user">
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
         View full history
       </button>
@@ -271,7 +271,7 @@
           const localDate = new Date(`${day.date}T00:00:00Z`).toLocaleDateString();
           const hours = (day.seconds / 3600).toFixed(2);
           cell.style.backgroundColor = activityColor(day.seconds, maxSeconds);
-          cell.title = `${localDate} — ${hours}h`;
+          cell.setAttribute("data-tooltip", `${localDate} — ${hours}h`);
         } else {
           cell.style.backgroundColor = "rgb(var(--gb-bg1-rgb))";
         }
@@ -420,16 +420,16 @@
       tr.className = "border-t border-gb-bg2";
       tr.innerHTML = `
         <td class="py-2" data-label="Category">${safeCategoryName}</td>
-        <td class="py-2" data-label="Duration" title="Started ${safeStart}">${safeDuration}</td>
-        <td class="py-2" data-label="Note" title="${safeNoteTitle}">${safeNote || "-"}</td>
+        <td class="py-2" data-label="Duration" data-tooltip="Started ${safeStart}">${safeDuration}</td>
+        <td class="py-2" data-label="Note" data-tooltip="${safeNoteTitle}">${safeNote || "-"}</td>
         <td class="py-2" data-label="Ended">${safeEnd}</td>
         ${canDeleteSessions ? `
           <td class="py-2" data-label="Actions">
-            <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" title="Edit this completed session">
+            <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit this completed session">
               <span class="material-symbols-rounded" aria-hidden="true">edit</span>
               Edit
             </button>
-            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" title="Delete this completed session">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this completed session">
               <span class="material-symbols-rounded" aria-hidden="true">delete</span>
               Remove
             </button>
