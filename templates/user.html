@@ -1,34 +1,8 @@
 {% extends "base.html" %}
+{% block header_icon %}person{% endblock %}
+{% block header_title %}{{ target_user.username }}'s Activity{% endblock %}
+{% block header_subtitle %}Profile insights from tracked sessions.{% endblock %}
 {% block content %}
-<header class="flex flex-wrap items-center justify-between gap-3 mb-5">
-  <div>
-    <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">person</span>
-      {{ target_user.username }}'s Activity
-    </h1>
-    <p class="text-sm text-gb-fg/75">Profile insights from tracked sessions.</p>
-  </div>
-  <div class="flex items-center flex-wrap gap-2">
-    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-blue text-gb-bg0 border-gb-blue/80 inline-flex items-center gap-2" data-tooltip="Back to your main dashboard">
-      <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
-      Back to dashboard
-    </a>
-    <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2" data-tooltip="Open weekly leaderboard">
-      <span class="material-symbols-rounded" aria-hidden="true">leaderboard</span>
-      Weekly Board
-    </a>
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
-      <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
-    </button>
-    <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" data-tooltip="Sign out of your account">
-        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
-        Sign out
-      </button>
-    </form>
-  </div>
-</header>
-
 <div class="grid lg:grid-cols-2 gap-4">
   <section class="lg:col-span-2 neu-surface p-5">
     <h2 class="font-semibold text-lg mb-2 text-gb-fg flex items-center gap-2">
@@ -140,10 +114,10 @@
     </div>
     <p id="recentEmpty" class="hidden mt-3 empty-state">No completed sessions match the current filters.</p>
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-      <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 10 most recent tasks.</p>
-      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Expand to all completed tasks for this user">
+      <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 0 of 0 tasks.</p>
+      <button id="loadMoreRecentBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Load more completed tasks for this user">
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
-        View full history
+        Load more
       </button>
     </div>
   </section>
@@ -156,8 +130,10 @@
   let durationChart = null;
   const state = {
     recentSessions: [],
-    recentSessionsAll: null,
-    fullHistoryMode: false,
+    recentLimit: 10,
+    recentOffset: 0,
+    recentTotal: 0,
+    recentHasMore: false,
     activityDays: [],
     activityMaxSeconds: 0
   };
@@ -353,56 +329,41 @@
     document.getElementById("editNote").focus();
   }
 
-  function filterRecentSessions() {
-    const query = document.getElementById("recentSearchInput").value.trim().toLowerCase();
-    const category = document.getElementById("recentCategoryFilter").value.trim().toLowerCase();
-    const source = state.recentSessionsAll || state.recentSessions;
-    return source.filter((s) => {
-      const matchesQuery = !query || s.note.toLowerCase().includes(query) || s.category_name.toLowerCase().includes(query);
-      const matchesCategory = !category || s.category_name.toLowerCase() === category;
-      return matchesQuery && matchesCategory;
-    });
+  function getRecentFilters() {
+    return {
+      query: document.getElementById("recentSearchInput").value.trim(),
+      category: document.getElementById("recentCategoryFilter").value.trim()
+    };
   }
 
-  function hasActiveRecentFilters() {
-    return Boolean(
-      document.getElementById("recentSearchInput").value.trim()
-      || document.getElementById("recentCategoryFilter").value.trim()
-    );
-  }
-
-  function updateRecentHistoryControls(filteredCount) {
-    const btn = document.getElementById("viewFullHistoryBtn");
+  function updateRecentHistoryControls() {
+    const btn = document.getElementById("loadMoreRecentBtn");
     const hint = document.getElementById("recentHistoryHint");
-    if (state.fullHistoryMode) {
-      btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history_toggle_off</span>Show recent only`;
-      hint.textContent = filteredCount
-        ? `Showing all matching tasks (${filteredCount}).`
-        : "Showing full task history.";
-      return;
-    }
-    btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history</span>View full history`;
-    if (hasActiveRecentFilters()) {
-      hint.textContent = "Search scans full task history for this user.";
+    const { query, category } = getRecentFilters();
+    const qualifier = query || category ? "matching" : "total";
+    if (!state.recentTotal) {
+      hint.textContent = "No completed tasks yet.";
     } else {
-      hint.textContent = "Showing 10 most recent tasks.";
+      hint.textContent = `Showing ${state.recentSessions.length} of ${state.recentTotal} ${qualifier} tasks.`;
     }
+    btn.classList.toggle("hidden", !state.recentHasMore);
   }
 
-  async function ensureFullHistoryLoaded(force = false) {
-    if (state.recentSessionsAll && !force) return;
-    const res = await fetch(`/api/users/${targetUserId}/recent-sessions?full=1`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load full history");
-    state.recentSessionsAll = data.sessions || [];
+  function buildRecentParams(offset) {
+    const { query, category } = getRecentFilters();
+    const params = new URLSearchParams({
+      limit: String(state.recentLimit),
+      offset: String(offset)
+    });
+    if (query) params.set("query", query);
+    if (category) params.set("category", category);
+    return params;
   }
 
   function renderRecentTable(sessions) {
     const tbody = document.getElementById("recentBody");
-    const visibleSessions = state.fullHistoryMode || hasActiveRecentFilters()
-      ? sessions
-      : sessions.slice(0, 10);
-    updateRecentHistoryControls(sessions.length);
+    const visibleSessions = sessions;
+    updateRecentHistoryControls();
     tbody.innerHTML = "";
     if (!visibleSessions.length) {
       document.getElementById("recentEmpty").classList.remove("hidden");
@@ -493,78 +454,80 @@
     });
   }
 
+  async function loadRecent({ reset = true } = {}) {
+    const offset = reset ? 0 : state.recentSessions.length;
+    const params = buildRecentParams(offset);
+    const res = await fetch(`/api/users/${targetUserId}/recent-sessions?${params.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
+    if (reset) {
+      state.recentSessions = data.sessions || [];
+    } else {
+      state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
+    }
+    state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
+    state.recentHasMore = Boolean(data.has_more);
+    renderRecentTable(state.recentSessions);
+    renderDurationChart(state.recentSessions);
+  }
+
   async function loadPageData() {
-    const [statsRes, recentRes, activityRes] = await Promise.all([
+    const [statsRes, activityRes] = await Promise.all([
       fetch(`/api/users/${targetUserId}/stats`),
-      fetch(`/api/users/${targetUserId}/recent-sessions`),
       fetch(`/api/users/${targetUserId}/activity-grid?days=140`)
     ]);
 
     const statsData = await statsRes.json();
-    const recentData = await recentRes.json();
     const activityData = await activityRes.json();
 
     if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
-    if (!recentRes.ok) throw new Error(recentData.error || "Could not load recent sessions");
     if (!activityRes.ok) throw new Error(activityData.error || "Could not load activity grid");
 
     renderCategoryChart(statsData.categories || []);
-    state.recentSessions = recentData.sessions || [];
-    if (state.recentSessionsAll || state.fullHistoryMode || hasActiveRecentFilters()) {
-      await ensureFullHistoryLoaded(true);
-    }
     state.activityDays = activityData.days || [];
     state.activityMaxSeconds = activityData.max_seconds || 0;
-    renderRecentTable(filterRecentSessions());
-    renderDurationChart(state.recentSessions);
+    await loadRecent({ reset: true });
     paintActivityLegend();
     renderActivityGrid(state.activityDays, state.activityMaxSeconds);
   }
 
-  document.getElementById("recentSearchInput").addEventListener("input", async () => {
-    if (hasActiveRecentFilters()) {
+  let recentSearchTimer = null;
+  document.getElementById("recentSearchInput").addEventListener("input", () => {
+    if (recentSearchTimer) clearTimeout(recentSearchTimer);
+    recentSearchTimer = setTimeout(async () => {
       try {
-        await ensureFullHistoryLoaded();
+        await loadRecent({ reset: true });
       } catch (err) {
-        alert(err.message || "Could not load full history");
-        return;
+        alert(err.message || "Could not load recent sessions");
       }
-    }
-    renderRecentTable(filterRecentSessions());
+    }, 300);
   });
 
   document.getElementById("recentCategoryFilter").addEventListener("change", async () => {
-    if (hasActiveRecentFilters()) {
-      try {
-        await ensureFullHistoryLoaded();
-      } catch (err) {
-        alert(err.message || "Could not load full history");
-        return;
-      }
+    try {
+      await loadRecent({ reset: true });
+    } catch (err) {
+      alert(err.message || "Could not load recent sessions");
     }
-    renderRecentTable(filterRecentSessions());
   });
 
-  document.getElementById("clearRecentFiltersBtn").addEventListener("click", () => {
+  document.getElementById("clearRecentFiltersBtn").addEventListener("click", async () => {
     document.getElementById("recentSearchInput").value = "";
     document.getElementById("recentCategoryFilter").value = "";
-    state.fullHistoryMode = false;
-    renderRecentTable(filterRecentSessions());
+    try {
+      await loadRecent({ reset: true });
+    } catch (err) {
+      alert(err.message || "Could not load recent sessions");
+    }
   });
 
-  document.getElementById("viewFullHistoryBtn").addEventListener("click", async () => {
-    if (!state.fullHistoryMode) {
-      try {
-        await ensureFullHistoryLoaded();
-      } catch (err) {
-        alert(err.message || "Could not load full history");
-        return;
-      }
-      state.fullHistoryMode = true;
-    } else {
-      state.fullHistoryMode = false;
+  document.getElementById("loadMoreRecentBtn").addEventListener("click", async () => {
+    if (!state.recentHasMore) return;
+    try {
+      await loadRecent({ reset: false });
+    } catch (err) {
+      alert(err.message || "Could not load recent sessions");
     }
-    renderRecentTable(filterRecentSessions());
   });
 
   if (canDeleteSessions) {

@@ -116,9 +116,3 @@ Service binds `127.0.0.1:8000` (put behind nginx/Caddy).
 - Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (UTC)
 - Backups older than 14 days are auto-removed
 - Sessions store `category_name` directly (stable historical labels)
-
-If your DB still has `sessions.category_id`, run:
-
-```bash
-python migrate_sessions_category_name.py --db /path/to/timestat.db
-```

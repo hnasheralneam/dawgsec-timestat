@@ -1,30 +1,21 @@
 {% extends "base.html" %}
-{% block content %}
-<header class="flex flex-wrap items-center justify-between gap-3 mb-5">
-  <div>
-    <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
-      Admin Dashboard
-    </h1>
-    <p class="text-sm text-gb-fg/75">Delete users or selectively remove their tasks.</p>
-  </div>
-  <div class="flex items-center flex-wrap gap-2">
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
-      <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+{% block header_icon %}admin_panel_settings{% endblock %}
+{% block header_title %}Admin Dashboard{% endblock %}
+{% block header_subtitle %}Delete users or selectively remove their tasks.{% endblock %}
+{% block header_nav %}
+  <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="User dashboard">
+    <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+  </a>
+  <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+  </button>
+  <form action="{{ url_for('admin_logout') }}" method="post">
+    <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Admin sign out">
+      <span class="material-symbols-rounded" aria-hidden="true">logout</span>
     </button>
-    <a href="{{ url_for('dashboard') }}" class="neu-btn text-sm bg-gb-purple text-gb-bg0 border-gb-purple/80 inline-flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
-      User dashboard
-    </a>
-    <form action="{{ url_for('admin_logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2">
-        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
-        Admin sign out
-      </button>
-    </form>
-  </div>
-</header>
-
+  </form>
+{% endblock %}
+{% block content %}
 <section class="neu-surface p-5">
   <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
     <span class="material-symbols-rounded" aria-hidden="true">group</span>

@@ -12,8 +12,10 @@
       try {
         savedTheme = localStorage.getItem("timestat-theme");
       } catch (_err) {}
-      const useDark = savedTheme ? savedTheme === "dark" : prefersDark;
+      const mode = ["light", "dark", "system"].includes(savedTheme) ? savedTheme : "system";
+      const useDark = mode === "system" ? prefersDark : mode === "dark";
       if (useDark) document.documentElement.classList.add("dark");
+      document.documentElement.setAttribute("data-theme-mode", mode);
     })();
 
     tailwind.config = {
@@ -65,6 +67,10 @@
       --gb-fg-rgb: 235 219 178;
       --gb-shadow-rgb: 45 42 40;
       --gb-highlight-rgb: 78 72 68;
+    }
+
+    html, body {
+      overflow-x: hidden;
     }
 
     body {
@@ -145,6 +151,21 @@
       border-bottom: 1px dotted rgb(var(--gb-blue-rgb) / 0.7);
     }
 
+    @media (max-width: 640px) {
+      header h1 {
+        font-size: 1.125rem;
+        gap: 0.4rem;
+      }
+
+      header h1 .material-symbols-rounded {
+        font-size: 1rem;
+      }
+
+      header p {
+        font-size: 0.75rem;
+      }
+    }
+
     @media (max-width: 768px) {
       .responsive-table thead {
         display: none;
@@ -203,13 +224,14 @@
       font-weight: 600;
       max-width: 16rem;
       opacity: 0;
-      transform: translate(-9999px, -9999px);
+      visibility: hidden;
       transition: opacity 0.1s ease;
       box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb));
     }
 
     .custom-tooltip.is-visible {
       opacity: 1;
+      visibility: visible;
     }
   </style>
 </head>
@@ -227,7 +249,125 @@
         </div>
       {% endif %}
     {% endwith %}
+
+    {% block header %}
+    {% if user or is_admin %}
+    <header class="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div>
+        <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
+          <span class="material-symbols-rounded" aria-hidden="true">{% block header_icon %}dashboard{% endblock %}</span>
+          {% block header_title %}TimeStat{% endblock %}
+        </h1>
+        <p class="text-sm text-gb-fg/75">{% block header_subtitle %}{% endblock %}</p>
+      </div>
+      <div class="flex items-center flex-wrap gap-2">
+        {% block header_nav %}
+          {% if user %}
+            {% if active_page != "dashboard" %}
+            <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Dashboard">
+              <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+            </a>
+            {% endif %}
+            {% if active_page != "weekly_leaderboard" %}
+            <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Weekly leaderboard">
+              <span class="material-symbols-rounded" aria-hidden="true">leaderboard</span>
+            </a>
+            {% endif %}
+            {% if active_page != "all_time_stats" %}
+            <a href="{{ url_for('all_time_stats') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="All-time stats">
+              <span class="material-symbols-rounded" aria-hidden="true">insights</span>
+            </a>
+            {% endif %}
+            <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" type="button" data-tooltip="Account settings">
+              <span class="material-symbols-rounded" aria-hidden="true">settings</span>
+            </button>
+          {% endif %}
+          {% if is_admin and active_page != "admin_dashboard" %}
+          <a href="{{ url_for('admin_dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Admin dashboard">
+            <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
+          </a>
+          {% endif %}
+          <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+          </button>
+          {% if user %}
+          <form action="{{ url_for('logout') }}" method="post">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Sign out">
+              <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+            </button>
+          </form>
+          {% elif is_admin %}
+          <form action="{{ url_for('admin_logout') }}" method="post">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Admin sign out">
+              <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+            </button>
+          </form>
+          {% endif %}
+        {% endblock %}
+      </div>
+    </header>
+    {% endif %}
+    {% endblock %}
+
+    {% if user %}
+    <div id="settingsModal" class="fixed inset-0 z-50 hidden">
+      <div id="settingsBackdrop" class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
+      <div class="absolute inset-0 p-4 flex items-center justify-center">
+        <section class="neu-surface w-full max-w-lg p-5 relative">
+          <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" data-tooltip="Close settings">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+          </button>
+          <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
+            <span class="material-symbols-rounded" aria-hidden="true">manage_accounts</span>
+            Account Settings
+          </h2>
+          <p class="text-sm text-gb-fg/75 mb-4">Update your username, collaboration notifications, and login code.</p>
+
+          <label class="block">
+            <span class="text-sm text-gb-fg/85">Username</span>
+            <input id="settingsUsername" maxlength="50" class="mt-1 neu-input" placeholder="Username">
+          </label>
+
+          <label class="mt-4 flex items-start gap-2 text-sm text-gb-fg/85">
+            <input id="settingsCollabNotify" type="checkbox" class="mt-1 accent-[rgb(104,157,106)]">
+            <span>Notify me when another teammate starts a session.</span>
+          </label>
+
+          <div class="mt-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="text-sm text-gb-fg/85">Login code <span class="hint">(reset to reveal)</span></div>
+              <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" data-tooltip="Generate a new 6-digit login code">
+                <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+                Reset
+              </button>
+            </div>
+            <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" data-tooltip="Hover to reveal login code">••••••</div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-2">
+            <button id="saveSettingsBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" data-tooltip="Save username changes">
+              <span class="material-symbols-rounded" aria-hidden="true">save</span>
+              Save Changes
+            </button>
+            <button id="cancelSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" data-tooltip="Cancel and close settings">
+              <span class="material-symbols-rounded" aria-hidden="true">close</span>
+              Cancel
+            </button>
+          </div>
+          <p id="settingsMessage" class="mt-3 text-sm text-gb-green"></p>
+        </section>
+      </div>
+    </div>
+    {% endif %}
+
     {% block content %}{% endblock %}
+    {% block footer %}
+    <footer class="mt-10 mb-2 text-center text-xs text-gb-fg/60">
+      Check out the code on <a href="https://github.com/hnasheralneam/dawgsec-timestat" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="mx-2">&middot;</span>
+      Made with ❤️ by <a href="https://hnasheralneam.dev" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">Hamza</a>
+    </footer>
+    {% endblock %}
   </div>
   <script>
     (function () {
@@ -245,28 +385,52 @@
         form.appendChild(input);
       });
 
+      const themeOrder = ["light", "dark", "system"];
+      const themeIcons = { light: "light_mode", dark: "dark_mode", system: "brightness_auto" };
+      const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+
+      const getThemeMode = () => document.documentElement.getAttribute("data-theme-mode") || "system";
+      const isDarkForMode = (mode) => (mode === "system" ? themeMedia.matches : mode === "dark");
+
       const applyThemeUi = () => {
-        const isDark = document.documentElement.classList.contains("dark");
+        const mode = getThemeMode();
         document.querySelectorAll(".theme-toggle").forEach((toggleBtn) => {
           const icon = toggleBtn.querySelector(".material-symbols-rounded");
           if (!icon) return;
-          icon.textContent = isDark ? "light_mode" : "dark_mode";
-          const titleText = isDark ? "Switch to light mode" : "Switch to dark mode";
+          icon.textContent = themeIcons[mode];
+          const titleText =
+            mode === "system"
+              ? `Theme: System (currently ${isDarkForMode(mode) ? "dark" : "light"}). Click for light.`
+              : mode === "dark"
+              ? "Theme: Dark. Click for system."
+              : "Theme: Light. Click for dark.";
           toggleBtn.setAttribute("data-tooltip", titleText);
           toggleBtn.removeAttribute("title");
           toggleBtn.setAttribute("aria-label", titleText);
         });
       };
 
+      const setThemeMode = (mode) => {
+        document.documentElement.setAttribute("data-theme-mode", mode);
+        document.documentElement.classList.toggle("dark", isDarkForMode(mode));
+        try {
+          localStorage.setItem("timestat-theme", mode);
+        } catch (_err) {}
+        applyThemeUi();
+      };
+
       applyThemeUi();
       document.querySelectorAll(".theme-toggle").forEach((toggleBtn) => {
         toggleBtn.addEventListener("click", () => {
-          const nowDark = document.documentElement.classList.toggle("dark");
-          try {
-            localStorage.setItem("timestat-theme", nowDark ? "dark" : "light");
-          } catch (_err) {}
-          applyThemeUi();
+          const next = themeOrder[(themeOrder.indexOf(getThemeMode()) + 1) % themeOrder.length];
+          setThemeMode(next);
         });
+      });
+
+      themeMedia.addEventListener("change", () => {
+        if (getThemeMode() !== "system") return;
+        document.documentElement.classList.toggle("dark", themeMedia.matches);
+        applyThemeUi();
       });
 
       const tooltip = document.createElement("div");
@@ -354,5 +518,126 @@
       );
     })();
   </script>
+  {% if user %}
+  <script>
+    (function () {
+      const state = { settings: null };
+
+      function setSettingsMessage(text, isError = false) {
+        const el = document.getElementById("settingsMessage");
+        el.textContent = text || "";
+        el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+      }
+
+      function setLoginCodeDisplay(masked = true) {
+        const box = document.getElementById("settingsLoginCodeBox");
+        if (!state.settings || !state.settings.login_code) {
+          box.textContent = "Unavailable";
+          box.setAttribute("data-tooltip", "Reset to generate a new login code");
+          return;
+        }
+        box.textContent = masked ? "••••••" : state.settings.login_code;
+        box.setAttribute(
+          "data-tooltip",
+          masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`
+        );
+      }
+
+      function closeSettingsModal() {
+        document.getElementById("settingsModal").classList.add("hidden");
+        setSettingsMessage("");
+        setLoginCodeDisplay(true);
+      }
+
+      async function openSettingsModal() {
+        document.getElementById("settingsModal").classList.remove("hidden");
+        setSettingsMessage("");
+        const res = await fetch("/api/user/settings");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Could not load settings");
+        state.settings = data.user;
+        document.getElementById("settingsUsername").value = state.settings.username || "";
+        document.getElementById("settingsCollabNotify").checked = !!state.settings.notify_on_collab_starts;
+        const headerName = document.getElementById("headerUsername");
+        if (headerName && state.settings.username) headerName.textContent = state.settings.username;
+        setLoginCodeDisplay(true);
+      }
+
+      async function postJson(url, body = {}) {
+        const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Request failed");
+        return data;
+      }
+
+      document.getElementById("openSettingsBtn").addEventListener("click", async () => {
+        try {
+          await openSettingsModal();
+        } catch (err) {
+          setSettingsMessage(err.message, true);
+          closeSettingsModal();
+        }
+      });
+
+      document.getElementById("closeSettingsBtn").addEventListener("click", closeSettingsModal);
+      document.getElementById("cancelSettingsBtn").addEventListener("click", closeSettingsModal);
+      document.getElementById("settingsBackdrop").addEventListener("click", closeSettingsModal);
+
+      document.getElementById("settingsLoginCodeBox").addEventListener("mouseenter", () => {
+        setLoginCodeDisplay(false);
+      });
+      document.getElementById("settingsLoginCodeBox").addEventListener("mouseleave", () => {
+        setLoginCodeDisplay(true);
+      });
+
+      document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+        const username = document.getElementById("settingsUsername").value.trim();
+        const notifyOnCollabStarts = document.getElementById("settingsCollabNotify").checked;
+        try {
+          const data = await postJson("/api/user/settings", {
+            username,
+            notify_on_collab_starts: notifyOnCollabStarts
+          });
+          if (!state.settings) state.settings = {};
+          state.settings.username = data.user.username;
+          state.settings.notify_on_collab_starts = !!data.user.notify_on_collab_starts;
+          const headerName = document.getElementById("headerUsername");
+          if (headerName) headerName.textContent = data.user.username;
+          setSettingsMessage("Settings updated.");
+        } catch (err) {
+          setSettingsMessage(err.message, true);
+        }
+      });
+
+      document.getElementById("resetLoginCodeBtn").addEventListener("click", async () => {
+        if (!confirm("Reset your login code? Your old code will stop working immediately.")) return;
+        try {
+          const data = await postJson("/api/user/settings/reset-login-code");
+          if (!state.settings) state.settings = {};
+          state.settings.login_code = data.login_code;
+          setLoginCodeDisplay(false);
+          setSettingsMessage("Login code reset. Hover out/in to hide and reveal again.");
+        } catch (err) {
+          setSettingsMessage(err.message, true);
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        if (!document.getElementById("settingsModal").classList.contains("hidden")) {
+          closeSettingsModal();
+        }
+      });
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>

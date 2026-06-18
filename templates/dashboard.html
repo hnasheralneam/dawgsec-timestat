@@ -1,29 +1,8 @@
 {% extends "base.html" %}
+{% block header_icon %}dashboard{% endblock %}
+{% block header_title %}TimeStat Dashboard{% endblock %}
+{% block header_subtitle %}Welcome, <span id="headerUsername">{{ user.username }}</span>.{% endblock %}
 {% block content %}
-<header class="flex flex-wrap items-center justify-between gap-3 mb-5">
-  <div>
-    <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
-      TimeStat Dashboard
-    </h1>
-    <p class="text-sm text-gb-fg/75">Welcome, <span id="headerUsername">{{ user.username }}</span>.</p>
-  </div>
-  <div class="flex items-center flex-wrap gap-2">
-    <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" type="button" data-tooltip="Open account settings">
-      <span class="material-symbols-rounded" aria-hidden="true">settings</span>
-    </button>
-    <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
-      <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
-    </button>
-    <form action="{{ url_for('logout') }}" method="post">
-      <button class="neu-btn text-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-2" data-tooltip="Sign out of your account">
-        <span class="material-symbols-rounded" aria-hidden="true">logout</span>
-        Sign out
-      </button>
-    </form>
-  </div>
-</header>
-
 <div id="collabNotifications" class="fixed right-4 bottom-4 z-40 space-y-2 max-w-sm pointer-events-none"></div>
 
 <div class="grid lg:grid-cols-3 gap-4">
@@ -52,7 +31,7 @@
       <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
       <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
       <div class="mt-4">
-         <div class="flex gap-2 justify-center">
+         <div class="flex flex-wrap gap-2 justify-center">
         <button id="startBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 px-6 inline-flex items-center gap-2" data-tooltip="Start a new active session">
           <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           Start
@@ -210,62 +189,13 @@
     </div>
     <p id="recentEmpty" class="empty-state hidden mt-3">No recent sessions match your filters.</p>
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-      <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing your 10 most recent tasks.</p>
-      <button id="viewFullHistoryBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Expand to all completed tasks">
+      <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 0 of 0 tasks.</p>
+      <button id="loadMoreRecentBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Load more completed tasks">
         <span class="material-symbols-rounded" aria-hidden="true">history</span>
-        View full history
+        Load more
       </button>
     </div>
   </section>
-</div>
-
-<div id="settingsModal" class="fixed inset-0 z-50 hidden">
-  <div id="settingsBackdrop" class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
-  <div class="absolute inset-0 p-4 flex items-center justify-center">
-    <section class="neu-surface w-full max-w-lg p-5 relative">
-      <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" data-tooltip="Close settings">
-        <span class="material-symbols-rounded" aria-hidden="true">close</span>
-      </button>
-      <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
-        <span class="material-symbols-rounded" aria-hidden="true">manage_accounts</span>
-        Account Settings
-      </h2>
-      <p class="text-sm text-gb-fg/75 mb-4">Update your username, collaboration notifications, and login code.</p>
-
-      <label class="block">
-        <span class="text-sm text-gb-fg/85">Username</span>
-        <input id="settingsUsername" maxlength="50" class="mt-1 neu-input" placeholder="Username">
-      </label>
-
-      <label class="mt-4 flex items-start gap-2 text-sm text-gb-fg/85">
-        <input id="settingsCollabNotify" type="checkbox" class="mt-1 accent-[rgb(104,157,106)]">
-        <span>Notify me when another teammate starts a session.</span>
-      </label>
-
-      <div class="mt-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="text-sm text-gb-fg/85">Login code <span class="hint">(hover to reveal)</span></div>
-          <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" data-tooltip="Generate a new 6-digit login code">
-            <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
-            Reset
-          </button>
-        </div>
-        <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" data-tooltip="Hover to reveal login code">••••••</div>
-      </div>
-
-      <div class="mt-4 flex flex-wrap gap-2">
-        <button id="saveSettingsBtn" class="neu-btn bg-gb-green text-gb-bg0 border-gb-green/80 inline-flex items-center gap-2" type="button" data-tooltip="Save username changes">
-          <span class="material-symbols-rounded" aria-hidden="true">save</span>
-          Save Changes
-        </button>
-        <button id="cancelSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-2" type="button" data-tooltip="Cancel and close settings">
-          <span class="material-symbols-rounded" aria-hidden="true">close</span>
-          Cancel
-        </button>
-      </div>
-      <p id="settingsMessage" class="mt-3 text-sm text-gb-green"></p>
-    </section>
-  </div>
 </div>
 
 <script>
@@ -273,9 +203,10 @@
     current: null,
     timerBase: 0,
     recentSessions: [],
-    recentSessionsAll: null,
-    fullHistoryMode: false,
-    settings: null,
+    recentLimit: 10,
+    recentOffset: 0,
+    recentTotal: 0,
+    recentHasMore: false,
     collabSinceTs: null,
     collabInitialized: false,
     shownStartNotifications: new Set()
@@ -336,26 +267,6 @@
     el.classList.toggle("text-gb-green", !isError);
   }
 
-  function setSettingsMessage(text, isError = false) {
-    const el = document.getElementById("settingsMessage");
-    el.textContent = text || "";
-    el.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
-  }
-
-  function setLoginCodeDisplay(masked = true) {
-    const box = document.getElementById("settingsLoginCodeBox");
-    if (!state.settings || !state.settings.login_code) {
-      box.textContent = "Unavailable";
-      box.setAttribute("data-tooltip", "Login code not available for this account");
-      return;
-    }
-    box.textContent = masked ? "••••••" : state.settings.login_code;
-    box.setAttribute(
-      "data-tooltip",
-      masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`
-    );
-  }
-
   function showCollabNotification(text) {
     const host = document.getElementById("collabNotifications");
     const toast = document.createElement("div");
@@ -388,26 +299,6 @@
       );
       list.appendChild(entry);
     }
-  }
-
-  function closeSettingsModal() {
-    document.getElementById("settingsModal").classList.add("hidden");
-    setSettingsMessage("");
-    setLoginCodeDisplay(true);
-  }
-
-  async function openSettingsModal() {
-    document.getElementById("settingsModal").classList.remove("hidden");
-    setSettingsMessage("");
-    const res = await fetch("/api/user/settings");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load settings");
-    state.settings = data.user;
-    document.getElementById("settingsUsername").value = state.settings.username || "";
-    document.getElementById("settingsCollabNotify").checked = !!state.settings.notify_on_collab_starts;
-    const headerName = document.getElementById("headerUsername");
-    if (headerName && state.settings.username) headerName.textContent = state.settings.username;
-    setLoginCodeDisplay(true);
   }
 
   function updateButtons() {
@@ -599,48 +490,35 @@
     );
   }
 
-  function filterRecentSessions() {
-    const query = document.getElementById("recentSearchInput").value.trim().toLowerCase();
-    const category = document.getElementById("recentCategoryFilter").value.trim().toLowerCase();
-    const source = state.recentSessionsAll || state.recentSessions;
-    return source.filter((s) => {
-      const matchesQuery = !query || s.note.toLowerCase().includes(query) || s.category_name.toLowerCase().includes(query);
-      const matchesCategory = !category || s.category_name.toLowerCase() === category;
-      return matchesQuery && matchesCategory;
-    });
+  function getRecentFilters() {
+    return {
+      query: document.getElementById("recentSearchInput").value.trim(),
+      category: document.getElementById("recentCategoryFilter").value.trim()
+    };
   }
 
-  function hasActiveRecentFilters() {
-    return Boolean(
-      document.getElementById("recentSearchInput").value.trim()
-      || document.getElementById("recentCategoryFilter").value.trim()
-    );
-  }
-
-  function updateRecentHistoryControls(filteredCount) {
-    const btn = document.getElementById("viewFullHistoryBtn");
+  function updateRecentHistoryControls() {
+    const btn = document.getElementById("loadMoreRecentBtn");
     const hint = document.getElementById("recentHistoryHint");
-    if (state.fullHistoryMode) {
-      btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history_toggle_off</span>Show recent only`;
-      hint.textContent = filteredCount
-        ? `Showing all matching tasks (${filteredCount}).`
-        : "Showing full task history.";
-      return;
-    }
-    btn.innerHTML = `<span class="material-symbols-rounded" aria-hidden="true">history</span>View full history`;
-    if (hasActiveRecentFilters()) {
-      hint.textContent = "Search scans your full task history.";
+    const { query, category } = getRecentFilters();
+    const qualifier = query || category ? "matching" : "total";
+    if (!state.recentTotal) {
+      hint.textContent = "No completed tasks yet.";
     } else {
-      hint.textContent = "Showing your 10 most recent tasks.";
+      hint.textContent = `Showing ${state.recentSessions.length} of ${state.recentTotal} ${qualifier} tasks.`;
     }
+    btn.classList.toggle("hidden", !state.recentHasMore);
   }
 
-  async function ensureFullHistoryLoaded(force = false) {
-    if (state.recentSessionsAll && !force) return;
-    const res = await fetch("/api/recent-sessions?full=1");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load full history");
-    state.recentSessionsAll = data.sessions || [];
+  function buildRecentParams(offset) {
+    const { query, category } = getRecentFilters();
+    const params = new URLSearchParams({
+      limit: String(state.recentLimit),
+      offset: String(offset)
+    });
+    if (query) params.set("query", query);
+    if (category) params.set("category", category);
+    return params;
   }
 
   function closeEditPanel() {
@@ -662,10 +540,8 @@
   function renderRecent(sessions) {
     const tbody = document.getElementById("recentBody");
     const empty = document.getElementById("recentEmpty");
-    const visibleSessions = state.fullHistoryMode || hasActiveRecentFilters()
-      ? sessions
-      : sessions.slice(0, 10);
-    updateRecentHistoryControls(sessions.length);
+    const visibleSessions = sessions;
+    updateRecentHistoryControls();
     tbody.innerHTML = "";
     if (!visibleSessions.length) {
       empty.classList.remove("hidden");
@@ -721,15 +597,20 @@
     });
   }
 
-  async function loadRecent() {
-    const res = await fetch("/api/recent-sessions");
+  async function loadRecent({ reset = true } = {}) {
+    const offset = reset ? 0 : state.recentSessions.length;
+    const params = buildRecentParams(offset);
+    const res = await fetch(`/api/recent-sessions?${params.toString()}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
-    state.recentSessions = data.sessions || [];
-    if (state.recentSessionsAll || state.fullHistoryMode || hasActiveRecentFilters()) {
-      await ensureFullHistoryLoaded(true);
+    if (reset) {
+      state.recentSessions = data.sessions || [];
+    } else {
+      state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
     }
-    renderRecent(filterRecentSessions());
+    state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
+    state.recentHasMore = Boolean(data.has_more);
+    renderRecent(state.recentSessions);
   }
 
   async function refreshAll() {
@@ -738,57 +619,50 @@
         loadStatus(),
         loadWeeklyLeaderboard(),
         loadStats(),
-        loadRecent()
+        loadRecent({ reset: true })
       ]);
     } catch (_err) {
       setMessage("Could not refresh data.", true);
     }
   }
 
-  document.getElementById("recentSearchInput").addEventListener("input", async () => {
-    if (hasActiveRecentFilters()) {
+  let recentSearchTimer = null;
+  document.getElementById("recentSearchInput").addEventListener("input", () => {
+    if (recentSearchTimer) clearTimeout(recentSearchTimer);
+    recentSearchTimer = setTimeout(async () => {
       try {
-        await ensureFullHistoryLoaded();
+        await loadRecent({ reset: true });
       } catch (err) {
         setMessage(err.message, true);
-        return;
       }
-    }
-    renderRecent(filterRecentSessions());
+    }, 300);
   });
 
   document.getElementById("recentCategoryFilter").addEventListener("change", async () => {
-    if (hasActiveRecentFilters()) {
-      try {
-        await ensureFullHistoryLoaded();
-      } catch (err) {
-        setMessage(err.message, true);
-        return;
-      }
+    try {
+      await loadRecent({ reset: true });
+    } catch (err) {
+      setMessage(err.message, true);
     }
-    renderRecent(filterRecentSessions());
   });
 
-  document.getElementById("clearRecentFiltersBtn").addEventListener("click", () => {
+  document.getElementById("clearRecentFiltersBtn").addEventListener("click", async () => {
     document.getElementById("recentSearchInput").value = "";
     document.getElementById("recentCategoryFilter").value = "";
-    state.fullHistoryMode = false;
-    renderRecent(filterRecentSessions());
+    try {
+      await loadRecent({ reset: true });
+    } catch (err) {
+      setMessage(err.message, true);
+    }
   });
 
-  document.getElementById("viewFullHistoryBtn").addEventListener("click", async () => {
-    if (!state.fullHistoryMode) {
-      try {
-        await ensureFullHistoryLoaded();
-      } catch (err) {
-        setMessage(err.message, true);
-        return;
-      }
-      state.fullHistoryMode = true;
-    } else {
-      state.fullHistoryMode = false;
+  document.getElementById("loadMoreRecentBtn").addEventListener("click", async () => {
+    if (!state.recentHasMore) return;
+    try {
+      await loadRecent({ reset: false });
+    } catch (err) {
+      setMessage(err.message, true);
     }
-    renderRecent(filterRecentSessions());
   });
 
   document.getElementById("cancelEditSessionBtn").addEventListener("click", () => {
@@ -887,74 +761,20 @@
     }
   }, 1000);
 
-  document.getElementById("openSettingsBtn").addEventListener("click", async () => {
-    try {
-      await openSettingsModal();
-    } catch (err) {
-      setMessage(err.message, true);
-      closeSettingsModal();
-    }
-  });
-
-  document.getElementById("closeSettingsBtn").addEventListener("click", () => {
-    closeSettingsModal();
-  });
-
-  document.getElementById("cancelSettingsBtn").addEventListener("click", () => {
-    closeSettingsModal();
-  });
-
-  document.getElementById("settingsBackdrop").addEventListener("click", () => {
-    closeSettingsModal();
-  });
-
-  document.getElementById("settingsLoginCodeBox").addEventListener("mouseenter", () => {
-    setLoginCodeDisplay(false);
-  });
-  document.getElementById("settingsLoginCodeBox").addEventListener("mouseleave", () => {
-    setLoginCodeDisplay(true);
-  });
-
-  document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
-    const username = document.getElementById("settingsUsername").value.trim();
-    const notifyOnCollabStarts = document.getElementById("settingsCollabNotify").checked;
-    try {
-      const data = await postJson("/api/user/settings", {
-        username,
-        notify_on_collab_starts: notifyOnCollabStarts
-      });
-      if (!state.settings) state.settings = {};
-      state.settings.username = data.user.username;
-      state.settings.notify_on_collab_starts = !!data.user.notify_on_collab_starts;
-      const headerName = document.getElementById("headerUsername");
-      if (headerName) headerName.textContent = data.user.username;
-      setSettingsMessage("Settings updated.");
-    } catch (err) {
-      setSettingsMessage(err.message, true);
-    }
-  });
-
-  document.getElementById("resetLoginCodeBtn").addEventListener("click", async () => {
-    if (!confirm("Reset your login code? Your old code will stop working immediately.")) return;
-    try {
-      const data = await postJson("/api/user/settings/reset-login-code");
-      if (!state.settings) state.settings = {};
-      state.settings.login_code = data.login_code;
-      setLoginCodeDisplay(false);
-      setSettingsMessage("Login code reset. Hover out/in to hide and reveal again.");
-    } catch (err) {
-      setSettingsMessage(err.message, true);
-    }
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (!document.getElementById("settingsModal").classList.contains("hidden")) {
-      closeSettingsModal();
-    }
-  });
-
   refreshAll();
-  setInterval(refreshAll, 5000);
+  setInterval(() => {
+    loadStatus().catch(() => {
+      setMessage("Could not refresh status.", true);
+    });
+  }, 5000);
+  setInterval(() => {
+    Promise.all([
+      loadWeeklyLeaderboard(),
+      loadStats(),
+      loadRecent({ reset: true })
+    ]).catch(() => {
+      setMessage("Could not refresh dashboard data.", true);
+    });
+  }, 30000);
 </script>
 {% endblock %}
