@@ -11,7 +11,8 @@ def get_current_user():
         return None
     conn = db.get_db()
     return conn.execute(
-        "SELECT id, username FROM users WHERE id = ?", (session["user_id"],)
+        "SELECT id, username, theme_palette, theme_custom_color FROM users WHERE id = ?",
+        (session["user_id"],),
     ).fetchone()
 
 

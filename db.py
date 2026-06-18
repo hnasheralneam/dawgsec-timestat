@@ -164,6 +164,8 @@ def init_db() -> None:
             code_hash TEXT NOT NULL,
             login_code TEXT,
             notify_on_collab_starts INTEGER NOT NULL DEFAULT 1,
+            theme_palette TEXT NOT NULL DEFAULT 'gruvbox',
+            theme_custom_color TEXT,
             created_ts INTEGER NOT NULL
         );
 
@@ -207,6 +209,12 @@ def init_db() -> None:
         db.execute(
             "ALTER TABLE users ADD COLUMN notify_on_collab_starts INTEGER NOT NULL DEFAULT 1"
         )
+    if "theme_palette" not in user_columns:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN theme_palette TEXT NOT NULL DEFAULT 'gruvbox'"
+        )
+    if "theme_custom_color" not in user_columns:
+        db.execute("ALTER TABLE users ADD COLUMN theme_custom_color TEXT")
 
     migrate_sessions_table_to_category_name(db)
 

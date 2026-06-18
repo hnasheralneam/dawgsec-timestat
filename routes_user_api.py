@@ -1,3 +1,4 @@
+import re
 import sqlite3
 
 from flask import current_app, jsonify, request, session
@@ -8,6 +9,9 @@ import helpers
 import parsing
 import security
 
+THEME_PALETTES = {"gruvbox", "nord", "dracula", "solarized", "catppuccin", "custom"}
+HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
 
 def register_routes(app):
     @app.get("/api/user/settings")
@@ -16,7 +20,7 @@ def register_routes(app):
         user_id = int(session["user_id"])
         conn = db.get_db()
         user = conn.execute(
-            "SELECT id, username, login_code, notify_on_collab_starts FROM users WHERE id = ?",
+            "SELECT id, username, login_code, notify_on_collab_starts, theme_palette, theme_custom_color FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         if not user:
@@ -29,9 +33,31 @@ def register_routes(app):
                     "username": user["username"],
                     "login_code": login_code,
                     "notify_on_collab_starts": bool(user["notify_on_collab_starts"]),
+                    "theme_palette": user["theme_palette"],
+                    "theme_custom_color": user["theme_custom_color"],
                 }
             }
         )
+
+    @app.post("/api/user/theme")
+    @security.login_required
+    def api_user_theme_update():
+        payload = request.get_json(silent=True) or {}
+        palette = payload.get("palette")
+        custom_color = payload.get("custom_color")
+        if palette not in THEME_PALETTES:
+            return jsonify({"error": "Unknown palette"}), 400
+        if custom_color is not None and not HEX_COLOR_RE.match(custom_color):
+            return jsonify({"error": "custom_color must be a hex color like #458588"}), 400
+
+        user_id = int(session["user_id"])
+        conn = db.get_db()
+        conn.execute(
+            "UPDATE users SET theme_palette = ?, theme_custom_color = ? WHERE id = ?",
+            (palette, custom_color, user_id),
+        )
+        conn.commit()
+        return jsonify({"ok": True, "theme_palette": palette, "theme_custom_color": custom_color})
 
     @app.post("/api/user/settings")
     @security.login_required
