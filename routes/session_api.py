@@ -1,10 +1,10 @@
 from flask import jsonify, request, session
 
 import db
-import helpers
-import parsing
-import queries
-import security
+from utils import helpers
+from utils import parsing
+from services import queries
+from auth import security
 
 
 def register_routes(app):

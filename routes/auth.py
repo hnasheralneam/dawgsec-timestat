@@ -5,9 +5,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import db
-import helpers
-import parsing
-import security
+from utils import helpers
+from utils import parsing
+from auth import security
 
 
 def register_routes(app):

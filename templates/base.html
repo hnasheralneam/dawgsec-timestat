@@ -87,6 +87,10 @@
           light: { bg0: [239, 241, 245], bg1: [230, 233, 239], bg2: [204, 208, 218], fg: [76, 79, 105], red: [210, 15, 57], green: [64, 160, 43], yellow: [223, 142, 29], aqua: [23, 146, 153], blue: [30, 102, 245], purple: [136, 57, 239] },
           dark: { bg0: [30, 30, 46], bg1: [24, 24, 37], bg2: [49, 50, 68], fg: [205, 214, 244], red: [243, 139, 168], green: [166, 227, 161], yellow: [249, 226, 175], aqua: [148, 226, 213], blue: [137, 180, 250], purple: [203, 166, 247] },
         },
+        onedark: {
+          light: { bg0: [250, 250, 250], bg1: [240, 240, 240], bg2: [212, 212, 212], fg: [56, 58, 66], red: [228, 86, 73], green: [80, 161, 79], yellow: [193, 132, 1], aqua: [1, 132, 188], blue: [64, 120, 242], purple: [166, 38, 164] },
+          dark: { bg0: [40, 44, 52], bg1: [33, 37, 43], bg2: [62, 68, 81], fg: [171, 178, 191], red: [224, 108, 117], green: [152, 195, 121], yellow: [229, 192, 123], aqua: [86, 182, 194], blue: [97, 175, 239], purple: [198, 120, 221] },
+        },
       };
 
       const ACCENT_HUES = { red: 8, yellow: 48, green: 110, aqua: 175, blue: 215, purple: 280 };
@@ -248,196 +252,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:FILL@0..1">
   <link rel="icon" href="{{ url_for('static', filename='logo.svg') }}" type="image/svg+xml">
-  <style>
-    :root {
-      --gb-bg0-rgb: 249 245 215;
-      --gb-bg1-rgb: 235 219 178;
-      --gb-bg2-rgb: 213 196 161;
-      --gb-fg-rgb: 60 56 54;
-      --gb-red-rgb: 204 36 29;
-      --gb-green-rgb: 152 151 26;
-      --gb-yellow-rgb: 215 153 33;
-      --gb-aqua-rgb: 104 157 106;
-      --gb-blue-rgb: 69 133 136;
-      --gb-purple-rgb: 177 98 134;
-      --gb-shadow-rgb: 208 192 159;
-      --gb-highlight-rgb: 255 249 223;
-    }
-
-    .dark {
-      --gb-bg0-rgb: 40 40 40;
-      --gb-bg1-rgb: 60 56 54;
-      --gb-bg2-rgb: 80 73 69;
-      --gb-fg-rgb: 235 219 178;
-      --gb-shadow-rgb: 45 42 40;
-      --gb-highlight-rgb: 78 72 68;
-    }
-
-    html, body {
-      overflow-x: hidden;
-    }
-
-    body {
-      background: radial-gradient(
-        circle at top left,
-        rgb(var(--gb-bg1-rgb)) 0%,
-        rgb(var(--gb-bg0-rgb)) 42%,
-        rgb(var(--gb-bg1-rgb)) 100%
-      );
-      color: rgb(var(--gb-fg-rgb));
-    }
-
-    .neu-surface {
-      background: rgb(var(--gb-bg0-rgb));
-      border: 1px solid rgb(var(--gb-bg2-rgb));
-      border-radius: 1.1rem;
-      box-shadow: 8px 8px 18px rgb(var(--gb-shadow-rgb)), -8px -8px 18px rgb(var(--gb-highlight-rgb));
-      transition: box-shadow 0.2s ease, transform 0.2s ease;
-    }
-
-    .neu-surface:hover {
-      box-shadow: 10px 10px 20px rgb(var(--gb-shadow-rgb)), -10px -10px 20px rgb(var(--gb-highlight-rgb));
-    }
-
-    .neu-inset {
-      background: rgb(var(--gb-bg1-rgb));
-      border: 1px solid rgb(var(--gb-bg2-rgb));
-      box-shadow: inset 6px 6px 12px rgb(var(--gb-shadow-rgb)), inset -6px -6px 12px rgb(var(--gb-highlight-rgb));
-      border-radius: 0.9rem;
-    }
-
-    .neu-input {
-      width: 100%;
-      background: rgb(var(--gb-bg1-rgb));
-      border: 1px solid rgb(var(--gb-bg2-rgb));
-      border-radius: 0.8rem;
-      padding: 0.6rem 0.85rem;
-      color: rgb(var(--gb-fg-rgb));
-      box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb)), inset -4px -4px 10px rgb(var(--gb-highlight-rgb));
-    }
-
-    .neu-input:focus {
-      outline: none;
-      border-color: rgb(var(--gb-blue-rgb));
-      box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb)), inset -4px -4px 10px rgb(var(--gb-highlight-rgb)), 0 0 0 2px rgb(var(--gb-blue-rgb) / 0.25);
-    }
-
-    .neu-btn {
-      border-radius: 0.85rem;
-      padding: 0.55rem 1rem;
-      font-weight: 600;
-      border: 1px solid transparent;
-      box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb)), -6px -6px 12px rgb(var(--gb-highlight-rgb));
-      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
-    }
-
-    .neu-btn:hover {
-      filter: brightness(1.03);
-      transform: translateY(-1px);
-    }
-
-    .neu-btn:active {
-      transform: translateY(0);
-      box-shadow: inset 4px 4px 8px rgb(var(--gb-shadow-rgb)), inset -4px -4px 8px rgb(var(--gb-highlight-rgb));
-    }
-
-    .empty-state {
-      border: 1px dashed rgb(var(--gb-bg2-rgb));
-      border-radius: 0.9rem;
-      padding: 0.85rem;
-      text-align: center;
-      color: rgb(var(--gb-fg-rgb) / 0.75);
-      background: rgb(var(--gb-bg1-rgb) / 0.45);
-    }
-
-    .hint {
-      cursor: help;
-      border-bottom: 1px dotted rgb(var(--gb-blue-rgb) / 0.7);
-    }
-
-    @media (max-width: 640px) {
-      header h1 {
-        font-size: 1.125rem;
-        gap: 0.4rem;
-      }
-
-      header h1 .material-symbols-rounded {
-        font-size: 1rem;
-      }
-
-      header p {
-        font-size: 0.75rem;
-      }
-    }
-
-    @media (max-width: 768px) {
-      .responsive-table thead {
-        display: none;
-      }
-
-      .responsive-table,
-      .responsive-table tbody,
-      .responsive-table tr,
-      .responsive-table td {
-        display: block;
-        width: 100%;
-      }
-
-      .responsive-table tr {
-        border-top: 1px solid rgb(var(--gb-bg2-rgb));
-        padding: 0.45rem 0;
-      }
-
-      .responsive-table td {
-        border: 0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 0.8rem;
-        padding: 0.35rem 0;
-        text-align: right;
-      }
-
-      .responsive-table td::before {
-        content: attr(data-label);
-        font-weight: 600;
-        color: rgb(var(--gb-fg-rgb) / 0.8);
-        text-align: left;
-        flex: 1 1 auto;
-      }
-    }
-
-    .material-symbols-rounded {
-      font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
-      font-size: 1.1rem;
-      line-height: 1;
-      vertical-align: middle;
-    }
-
-    .custom-tooltip {
-      position: fixed;
-      top: 0;
-      left: 0;
-      z-index: 9999;
-      pointer-events: none;
-      background: rgb(var(--gb-fg-rgb));
-      color: rgb(var(--gb-bg0-rgb));
-      padding: 0.35rem 0.6rem;
-      border-radius: 0.55rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      max-width: 16rem;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.1s ease;
-      box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb));
-    }
-
-    .custom-tooltip.is-visible {
-      opacity: 1;
-      visibility: visible;
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="min-h-screen">
   <div class="max-w-6xl mx-auto px-4 py-6">
@@ -468,26 +283,29 @@
         {% block header_nav %}
           {% if user %}
             {% if active_page != "dashboard" %}
-            <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Dashboard">
+            <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="Dashboard" data-tooltip="Dashboard">
               <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
+              <span class="hidden md:inline text-xs font-semibold">Dashboard</span>
             </a>
             {% endif %}
             {% if active_page != "weekly_leaderboard" %}
-            <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Weekly leaderboard">
+            <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="Weekly leaderboard" data-tooltip="Weekly leaderboard">
               <span class="material-symbols-rounded" aria-hidden="true">leaderboard</span>
+              <span class="hidden md:inline text-xs font-semibold">Leaderboard</span>
             </a>
             {% endif %}
             {% if active_page != "all_time_stats" %}
-            <a href="{{ url_for('all_time_stats') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="All-time stats">
+            <a href="{{ url_for('all_time_stats') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="All-time stats" data-tooltip="All-time stats">
               <span class="material-symbols-rounded" aria-hidden="true">insights</span>
+              <span class="hidden md:inline text-xs font-semibold">All-time</span>
             </a>
             {% endif %}
-            <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" type="button" data-tooltip="Account settings">
+            <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" type="button" aria-label="Account settings" data-tooltip="Account settings">
               <span class="material-symbols-rounded" aria-hidden="true">settings</span>
             </button>
           {% endif %}
           {% if is_admin and active_page != "admin_dashboard" %}
-          <a href="{{ url_for('admin_dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Admin dashboard">
+          <a href="{{ url_for('admin_dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" aria-label="Admin dashboard" data-tooltip="Admin dashboard">
             <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
           </a>
           {% endif %}
@@ -496,13 +314,13 @@
           </button>
           {% if user %}
           <form action="{{ url_for('logout') }}" method="post">
-            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Sign out">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" aria-label="Sign out" data-tooltip="Sign out">
               <span class="material-symbols-rounded" aria-hidden="true">logout</span>
             </button>
           </form>
           {% elif is_admin %}
           <form action="{{ url_for('admin_logout') }}" method="post">
-            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Admin sign out">
+            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" aria-label="Admin sign out" data-tooltip="Admin sign out">
               <span class="material-symbols-rounded" aria-hidden="true">logout</span>
             </button>
           </form>
@@ -517,11 +335,11 @@
     <div id="settingsModal" class="fixed inset-0 z-50 hidden">
       <div id="settingsBackdrop" class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
       <div class="absolute inset-0 p-4 flex items-center justify-center">
-        <section class="neu-surface w-full max-w-lg p-5 relative">
-          <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" data-tooltip="Close settings">
+        <section class="neu-surface w-full max-w-lg p-5 relative" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+          <button id="closeSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 absolute top-3 right-3 inline-flex items-center justify-center" type="button" aria-label="Close settings" data-tooltip="Close settings">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
-          <h2 class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
+          <h2 id="settingsModalTitle" class="font-semibold text-lg text-gb-fg flex items-center gap-2 mb-1">
             <span class="material-symbols-rounded" aria-hidden="true">manage_accounts</span>
             Account Settings
           </h2>
@@ -533,7 +351,7 @@
           </label>
 
           <label class="mt-4 flex items-start gap-2 text-sm text-gb-fg/85">
-            <input id="settingsCollabNotify" type="checkbox" class="mt-1 accent-[rgb(104,157,106)]">
+            <input id="settingsCollabNotify" type="checkbox" class="mt-1 accent-[rgb(var(--gb-aqua-rgb))]">
             <span>Notify me when another teammate starts a session.</span>
           </label>
 
@@ -580,6 +398,14 @@
                 </span>
                 Catppuccin
               </button>
+              <button type="button" class="palette-swatch neu-btn p-2 inline-flex items-center gap-1.5 text-xs" data-palette="onedark" data-tooltip="One Dark">
+                <span class="inline-flex -space-x-1">
+                  <span class="w-3 h-3 rounded-full border border-gb-bg0" style="background:#e06c75"></span>
+                  <span class="w-3 h-3 rounded-full border border-gb-bg0" style="background:#98c379"></span>
+                  <span class="w-3 h-3 rounded-full border border-gb-bg0" style="background:#61afef"></span>
+                </span>
+                One Dark
+              </button>
             </div>
             <div class="mt-3 flex items-center gap-2">
               <input id="customThemeColor" type="color" value="#458588" class="h-9 w-12 rounded-lg border border-gb-bg2 bg-gb-bg1 cursor-pointer" data-tooltip="Pick a base color">
@@ -593,13 +419,19 @@
 
           <div class="mt-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="text-sm text-gb-fg/85">Login code <span class="hint">(reset to reveal)</span></div>
-              <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" data-tooltip="Generate a new 6-digit login code">
-                <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
-                Reset
-              </button>
+              <div class="text-sm text-gb-fg/85">Login code</div>
+              <div class="flex items-center gap-2">
+                <button id="toggleLoginCodeBtn" class="neu-btn-sm neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1" type="button" aria-label="Show login code">
+                  <span class="material-symbols-rounded" aria-hidden="true">visibility</span>
+                  <span class="btn-label">Show</span>
+                </button>
+                <button id="resetLoginCodeBtn" class="neu-btn bg-gb-yellow text-gb-bg0 border-gb-yellow/80 inline-flex items-center gap-2 text-xs px-3 py-2" type="button" data-tooltip="Generate a new 6-digit login code">
+                  <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+                  Reset
+                </button>
+              </div>
             </div>
-            <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg" data-tooltip="Hover to reveal login code">••••••</div>
+            <div id="settingsLoginCodeBox" class="mt-1 neu-inset px-3 py-2 font-mono tracking-widest text-base text-gb-fg select-none">••••••</div>
           </div>
 
           <div class="mt-4 flex flex-wrap gap-2">
@@ -618,9 +450,26 @@
     </div>
     {% endif %}
 
+    <div id="appConfirmModal" class="fixed inset-0 z-[60] hidden items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmMessage">
+      <div class="absolute inset-0 bg-gb-bg0/60 backdrop-blur-sm"></div>
+      <div class="relative neu-surface w-full max-w-xs p-5">
+        <p id="appConfirmMessage" class="text-gb-fg mb-4 text-sm leading-relaxed"></p>
+        <div class="flex gap-2 justify-end">
+          <button id="appConfirmCancel" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-sm" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">close</span>
+            Cancel
+          </button>
+          <button id="appConfirmOk" class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-sm" type="button">
+            <span class="material-symbols-rounded" aria-hidden="true">check</span>
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+
     {% block content %}{% endblock %}
     {% block footer %}
-    <footer class="mt-10 mb-2 text-center text-xs text-gb-fg/60">
+    <footer class="mt-10 mb-2 text-center text-xs text-gb-fg/75">
       Check out the code on <a href="https://github.com/hnasheralneam/dawgsec-timestat" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">GitHub</a>
       <span class="mx-2">&middot;</span>
       Made with ❤️ by <a href="https://hnasheralneam.dev" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">Hamza</a>
@@ -632,6 +481,40 @@
       window.getCsrfToken = function () {
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute("content") || "" : "";
+      };
+
+      window.cssRgb = function (varName) {
+        return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
+      };
+
+      window.themeColors = function () {
+        return [
+          "--gb-blue-rgb", "--gb-green-rgb", "--gb-yellow-rgb", "--gb-red-rgb", "--gb-purple-rgb",
+          "--gb-aqua-rgb", "--gb-fg-rgb", "--gb-red-rgb", "--gb-blue-rgb", "--gb-purple-rgb"
+        ].map(window.cssRgb);
+      };
+
+      window.MEDALS = ["🥇", "🥈", "🥉"];
+
+      window.showAppConfirm = function (message) {
+        return new Promise((resolve) => {
+          const modal = document.getElementById("appConfirmModal");
+          document.getElementById("appConfirmMessage").textContent = message;
+          modal.classList.remove("hidden");
+          modal.classList.add("flex");
+          const ok = document.getElementById("appConfirmOk");
+          const cancel = document.getElementById("appConfirmCancel");
+          ok.focus();
+          function cleanup(result) {
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+            ok.onclick = null;
+            cancel.onclick = null;
+            resolve(result);
+          }
+          ok.onclick = () => cleanup(true);
+          cancel.onclick = () => cleanup(false);
+        });
       };
 
       document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
@@ -782,6 +665,9 @@
   <script>
     (function () {
       const state = { settings: null };
+      let loginCodeMasked = true;
+      let settingsOpenerBtn = null;
+      let settingsTrapHandler = null;
 
       function setSettingsMessage(text, isError = false) {
         const el = document.getElementById("settingsMessage");
@@ -790,23 +676,37 @@
       }
 
       function setLoginCodeDisplay(masked = true) {
+        loginCodeMasked = masked;
         const box = document.getElementById("settingsLoginCodeBox");
+        const btn = document.getElementById("toggleLoginCodeBtn");
         if (!state.settings || !state.settings.login_code) {
           box.textContent = "Unavailable";
-          box.setAttribute("data-tooltip", "Reset to generate a new login code");
+          if (btn) btn.style.display = "none";
           return;
         }
+        if (btn) btn.style.display = "";
         box.textContent = masked ? "••••••" : state.settings.login_code;
-        box.setAttribute(
-          "data-tooltip",
-          masked ? "Hover to reveal login code" : `Login code: ${state.settings.login_code}`
-        );
+        if (btn) {
+          const icon = btn.querySelector(".material-symbols-rounded");
+          const label = btn.querySelector(".btn-label");
+          if (icon) icon.textContent = masked ? "visibility" : "visibility_off";
+          if (label) label.textContent = masked ? "Show" : "Hide";
+          btn.setAttribute("aria-label", masked ? "Show login code" : "Hide login code");
+        }
       }
 
       function closeSettingsModal() {
         document.getElementById("settingsModal").classList.add("hidden");
         setSettingsMessage("");
         setLoginCodeDisplay(true);
+        if (settingsTrapHandler) {
+          document.removeEventListener("keydown", settingsTrapHandler);
+          settingsTrapHandler = null;
+        }
+        if (settingsOpenerBtn && typeof settingsOpenerBtn.focus === "function") {
+          settingsOpenerBtn.focus();
+          settingsOpenerBtn = null;
+        }
       }
 
       function updatePaletteUi() {
@@ -820,9 +720,34 @@
       }
 
       async function openSettingsModal() {
-        document.getElementById("settingsModal").classList.remove("hidden");
+        settingsOpenerBtn = document.activeElement;
+        const modal = document.getElementById("settingsModal");
+        modal.classList.remove("hidden");
         setSettingsMessage("");
         updatePaletteUi();
+
+        const dialogEl = modal.querySelector('[role="dialog"]');
+        const firstFocusable = dialogEl ? dialogEl.querySelector(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled])'
+        ) : null;
+        if (firstFocusable) firstFocusable.focus();
+
+        settingsTrapHandler = (e) => {
+          if (e.key !== "Tab") return;
+          const focusable = Array.from(dialogEl.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          ));
+          if (!focusable.length) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            last.focus(); e.preventDefault();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            first.focus(); e.preventDefault();
+          }
+        };
+        document.addEventListener("keydown", settingsTrapHandler);
+
         const res = await fetch("/api/user/settings");
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Could not load settings");
@@ -876,11 +801,8 @@
         updatePaletteUi();
       });
 
-      document.getElementById("settingsLoginCodeBox").addEventListener("mouseenter", () => {
-        setLoginCodeDisplay(false);
-      });
-      document.getElementById("settingsLoginCodeBox").addEventListener("mouseleave", () => {
-        setLoginCodeDisplay(true);
+      document.getElementById("toggleLoginCodeBtn").addEventListener("click", () => {
+        setLoginCodeDisplay(!loginCodeMasked);
       });
 
       document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
@@ -903,13 +825,13 @@
       });
 
       document.getElementById("resetLoginCodeBtn").addEventListener("click", async () => {
-        if (!confirm("Reset your login code? Your old code will stop working immediately.")) return;
+        if (!await window.showAppConfirm("Reset your login code? Your old code will stop working immediately.")) return;
         try {
           const data = await postJson("/api/user/settings/reset-login-code");
           if (!state.settings) state.settings = {};
           state.settings.login_code = data.login_code;
           setLoginCodeDisplay(false);
-          setSettingsMessage("Login code reset. Hover out/in to hide and reveal again.");
+          setSettingsMessage("Login code reset. Use the Show button to reveal it.");
         } catch (err) {
           setSettingsMessage(err.message, true);
         }

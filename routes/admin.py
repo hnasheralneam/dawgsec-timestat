@@ -4,9 +4,9 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 import config
 import db
-import helpers
-import parsing
-import security
+from utils import helpers
+from utils import parsing
+from auth import security
 
 
 def register_routes(app):

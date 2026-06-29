@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import session
 
 import db
-import helpers
+from utils import helpers
 
 
 def get_current_user():
@@ -278,6 +278,7 @@ def leaderboard_rows(current_ts: int, since_ts: int | None = None):
             "seconds": totals.get(user["id"], 0),
         }
         for user in users
+        if totals.get(user["id"], 0) > 0
     ]
     rows.sort(key=lambda x: x["seconds"], reverse=True)
     for idx, row in enumerate(rows, start=1):

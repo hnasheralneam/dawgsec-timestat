@@ -1,8 +1,8 @@
 from flask import flash, redirect, render_template, url_for
 
 import db
-import queries
-import security
+from services import queries
+from auth import security
 
 
 def register_routes(app):

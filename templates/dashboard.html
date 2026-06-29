@@ -74,14 +74,14 @@
       <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
       Weekly Leaderboard
     </h2>
-    <p id="weeklyRangeLabel" class="text-xs text-gb-fg/70 mb-2">Top 5 team mebers across the last 7 days</p>
+    <p id="weeklyRangeLabel" class="text-xs text-gb-fg/70 mb-2">Top 5 team members across the last 7 days</p>
     <div class="overflow-auto max-h-96">
-      <table class="w-full text-sm responsive-table">
+      <table class="leaderboard-table">
         <thead class="text-gb-fg/70">
           <tr>
-            <th class="text-left py-2">Rank</th>
-            <th class="text-left py-2">User</th>
-            <th class="text-right py-2">Hours</th>
+            <th class="text-left">#</th>
+            <th class="text-left">User</th>
+            <th class="text-right">Hours</th>
           </tr>
         </thead>
         <tbody id="weeklyLeaderboardBody"></tbody>
@@ -107,6 +107,7 @@
     </h2>
     <p class="text-xs text-gb-fg/70 mb-2">Time share by category across the last 7 days.</p>
     <canvas id="myWeekChart" height="210"></canvas>
+    <p id="myWeekTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="myWeekEmpty" class="empty-state hidden mt-3">No personal session data in the last 7 days.</p>
   </section>
 
@@ -117,6 +118,7 @@
     </h2>
     <p class="text-xs text-gb-fg/70 mb-2">Combined team time by category across the last 7 days.</p>
     <canvas id="teamWeekChart" height="210"></canvas>
+    <p id="teamWeekTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="teamWeekEmpty" class="empty-state hidden mt-3">No team session data in the last 7 days.</p>
   </section>
 
@@ -134,7 +136,7 @@
             <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
-        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Clear session filters">
+        <button id="clearRecentFiltersBtn" class="hidden neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center justify-center gap-1" type="button" data-tooltip="Clear session filters">
           <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
           Clear
         </button>
@@ -174,7 +176,7 @@
     </div>
 
     <div class="overflow-auto">
-      <table class="w-full text-sm responsive-table">
+      <table class="w-full text-sm history-table">
         <thead class="text-gb-fg/70">
           <tr>
             <th class="text-left py-2">Category</th>
@@ -199,6 +201,7 @@
 </div>
 
 <script>
+  const currentUserId = {{ user.id }};
   const state = {
     current: null,
     timerBase: 0,
@@ -230,10 +233,6 @@
 
   function formatShortDate(ts) {
     return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
-  function cssRgb(varName) {
-    return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
   }
 
   function escapeHtml(value) {
@@ -270,8 +269,9 @@
   function showCollabNotification(text) {
     const host = document.getElementById("collabNotifications");
     const toast = document.createElement("div");
-    toast.className = "neu-surface px-3 py-2 text-sm text-gb-fg pointer-events-auto";
-    toast.textContent = text;
+    toast.className = "neu-surface px-3 py-2 text-sm text-gb-fg pointer-events-auto flex items-start gap-2";
+    toast.innerHTML = `<span class="flex-1">${text}</span><button class="text-gb-fg/60 hover:text-gb-fg ml-1 leading-none" aria-label="Dismiss notification">&times;</button>`;
+    toast.querySelector("button").addEventListener("click", () => toast.remove());
     host.appendChild(toast);
     setTimeout(() => {
       toast.remove();
@@ -404,10 +404,11 @@
   }
 
   async function loadWeeklyLeaderboard() {
+    const tbody = document.getElementById("weeklyLeaderboardBody");
+    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     const res = await fetch("/api/leaderboard/weekly?limit=5");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
-    const tbody = document.getElementById("weeklyLeaderboardBody");
     const empty = document.getElementById("weeklyLeaderboardEmpty");
     const range = document.getElementById("weeklyRangeLabel");
     tbody.innerHTML = "";
@@ -420,16 +421,17 @@
     empty.classList.add("hidden");
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
-      tr.className = "border-t border-gb-bg2";
+      const isMe = row.user_id === currentUserId;
+      const medal = window.MEDALS[row.rank - 1] || "";
+      if (isMe) tr.classList.add("font-semibold");
       tr.innerHTML = `
-        <td class="py-2" data-label="Rank">#${row.rank}</td>
-        <td class="py-2" data-label="User">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" data-tooltip="View ${row.username}'s profile">
-            <span class="material-symbols-rounded" aria-hidden="true">person</span>
-            ${row.username}
+        <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
+        <td>
+          <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
+            ${row.username}${isMe ? " (you)" : ""}
           </a>
         </td>
-        <td class="py-2 text-right" data-label="Hours" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -438,8 +440,9 @@
   let myWeekChart = null;
   let teamWeekChart = null;
 
-  function renderPie(chartRef, canvasId, labels, values, title, emptyId) {
+  function renderPie(chartRef, canvasId, labels, values, title, emptyId, totalEl) {
     const empty = document.getElementById(emptyId);
+    if (totalEl) document.getElementById(totalEl).classList.add("hidden");
     if (!labels.length) {
       if (chartRef) chartRef.destroy();
       empty.classList.remove("hidden");
@@ -448,17 +451,20 @@
     empty.classList.add("hidden");
     if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
-    const textColor = cssRgb("--gb-fg-rgb");
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    if (totalEl) {
+      const totalHours = values.reduce((a, b) => a + b, 0).toFixed(2);
+      const el = document.getElementById(totalEl);
+      el.textContent = `Total: ${totalHours} h`;
+      el.classList.remove("hidden");
+    }
     return new Chart(ctx, {
       type: "doughnut",
       data: {
         labels,
         datasets: [{
           data: values,
-          backgroundColor: [
-            "#458588", "#98971a", "#d79921", "#cc241d", "#b16286",
-            "#689d6a", "#b57614", "#af3a03", "#076678", "#8f3f71"
-          ]
+          backgroundColor: window.themeColors()
         }]
       },
       options: {
@@ -477,7 +483,8 @@
       data.my_categories_week.map(x => x.name),
       data.my_categories_week.map(x => x.seconds / 3600),
       "Your Hours (Last 7 Days)",
-      "myWeekEmpty"
+      "myWeekEmpty",
+      "myWeekTotalHours"
     );
 
     teamWeekChart = renderPie(
@@ -486,7 +493,8 @@
       data.team_categories_week.map(x => x.name),
       data.team_categories_week.map(x => x.seconds / 3600),
       "Team Hours (Last 7 Days)",
-      "teamWeekEmpty"
+      "teamWeekEmpty",
+      "teamWeekTotalHours"
     );
   }
 
@@ -499,6 +507,7 @@
 
   function updateRecentHistoryControls() {
     const btn = document.getElementById("loadMoreRecentBtn");
+    const clearBtn = document.getElementById("clearRecentFiltersBtn");
     const hint = document.getElementById("recentHistoryHint");
     const { query, category } = getRecentFilters();
     const qualifier = query || category ? "matching" : "total";
@@ -508,6 +517,7 @@
       hint.textContent = `Showing ${state.recentSessions.length} of ${state.recentTotal} ${qualifier} tasks.`;
     }
     btn.classList.toggle("hidden", !state.recentHasMore);
+    clearBtn.classList.toggle("hidden", !query && !category);
   }
 
   function buildRecentParams(offset) {
@@ -564,10 +574,10 @@
         <td class="py-2" data-label="Note" data-tooltip="${safeNoteTitle}">${safeNote || "-"}</td>
         <td class="py-2" data-label="Ended">${safeEnd}</td>
         <td class="py-2" data-label="Actions">
-          <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit category and note">
+          <button class="neu-btn neu-btn-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit category and note">
             <span class="material-symbols-rounded" aria-hidden="true">edit</span>
           </button>
-          <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this session">
+          <button class="neu-btn neu-btn-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this session">
             <span class="material-symbols-rounded" aria-hidden="true">delete</span>
           </button>
         </td>
@@ -585,7 +595,7 @@
     tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const sessionId = Number(btn.getAttribute("data-delete-session-id"));
-        if (!confirm("Delete this past session?")) return;
+        if (!await window.showAppConfirm("Delete this past session?")) return;
         try {
           await postJson("/api/session/delete", { session_id: sessionId });
           setMessage("Past session removed.");
@@ -736,7 +746,7 @@
 
   document.getElementById("cancelBtn").addEventListener("click", async () => {
     if (!state.current) return;
-    if (!confirm("Cancel the current session? This will discard it.")) return;
+    if (!await window.showAppConfirm("Cancel the current session? This will discard it.")) return;
     try {
       await postJson("/api/session/cancel");
       setMessage("Session canceled.");

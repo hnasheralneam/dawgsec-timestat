@@ -3,8 +3,14 @@
 {% block header_title %}{{ target_user.username }}'s Activity{% endblock %}
 {% block header_subtitle %}Profile insights from tracked sessions.{% endblock %}
 {% block content %}
+<div class="mb-3">
+  <a href="{{ url_for('weekly_leaderboard') }}" class="inline-flex items-center gap-1 text-sm text-gb-fg/70 hover:text-gb-blue">
+    <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+    Leaderboard
+  </a>
+</div>
 <div class="grid lg:grid-cols-2 gap-4">
-  <section class="lg:col-span-2 neu-surface p-5">
+  <section class="lg:col-span-2 neu-surface p-5 min-w-0">
     <h2 class="font-semibold text-lg mb-2 text-gb-fg flex items-center gap-2">
       <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
       Activity Grid (Last 20 Weeks)
@@ -29,6 +35,7 @@
       Category Breakdown
     </h2>
     <canvas id="categoryChart" height="240"></canvas>
+    <p id="categoryTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="categoryEmpty" class="hidden mt-3 empty-state">No session data yet.</p>
   </section>
 
@@ -55,7 +62,7 @@
             <option value="{{ category.name }}">{{ category.name }}</option>
           {% endfor %}
         </select>
-        <button id="clearRecentFiltersBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Clear active filters">
+        <button id="clearRecentFiltersBtn" class="hidden neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Clear active filters">
           <span class="material-symbols-rounded" aria-hidden="true">filter_alt_off</span>
           Clear
         </button>
@@ -97,7 +104,7 @@
     {% endif %}
 
     <div class="overflow-auto">
-      <table class="w-full text-sm responsive-table">
+      <table class="w-full text-sm history-table">
         <thead class="text-gb-fg/70">
           <tr>
             <th class="text-left py-2">Category</th>
@@ -113,6 +120,7 @@
       </table>
     </div>
     <p id="recentEmpty" class="hidden mt-3 empty-state">No completed sessions match the current filters.</p>
+    <p id="userProfileMessage" class="mt-2 text-sm text-gb-green"></p>
     <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
       <p id="recentHistoryHint" class="text-xs text-gb-fg/70">Showing 0 of 0 tasks.</p>
       <button id="loadMoreRecentBtn" class="neu-btn text-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1" type="button" data-tooltip="Load more completed tasks for this user">
@@ -126,6 +134,13 @@
 <script>
   const targetUserId = {{ target_user.id }};
   const canDeleteSessions = {{ "true" if can_delete_sessions else "false" }};
+
+  function setMessage(text, isError = false) {
+    const msgEl = document.getElementById("userProfileMessage");
+    if (!msgEl) return;
+    msgEl.textContent = text || "";
+    msgEl.className = `mt-2 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
+  }
   let categoryChart = null;
   let durationChart = null;
   const state = {
@@ -148,10 +163,6 @@
 
   function tsToLocal(ts) {
     return new Date(ts * 1000).toLocaleString();
-  }
-
-  function cssRgb(varName) {
-    return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
   }
 
   function activityAlphas() {
@@ -288,19 +299,24 @@
   function renderCategoryChart(rows) {
     if (categoryChart) categoryChart.destroy();
     document.getElementById("categoryEmpty").classList.toggle("hidden", rows.length > 0);
-    if (!rows.length) return;
-    const textColor = cssRgb("--gb-fg-rgb");
-
+    const totalEl = document.getElementById("categoryTotalHours");
+    if (!rows.length) {
+      if (totalEl) totalEl.classList.add("hidden");
+      return;
+    }
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    if (totalEl) {
+      const totalHours = rows.reduce((a, x) => a + x.seconds / 3600, 0).toFixed(2);
+      totalEl.textContent = `Total: ${totalHours} h`;
+      totalEl.classList.remove("hidden");
+    }
     categoryChart = new Chart(document.getElementById("categoryChart"), {
       type: "doughnut",
       data: {
         labels: rows.map((x) => x.name),
         datasets: [{
           data: rows.map((x) => x.seconds / 3600),
-          backgroundColor: [
-            "#458588", "#98971a", "#d79921", "#cc241d", "#b16286",
-            "#689d6a", "#b57614", "#af3a03", "#076678", "#8f3f71"
-          ]
+          backgroundColor: window.themeColors()
         }]
       },
       options: {
@@ -338,6 +354,7 @@
 
   function updateRecentHistoryControls() {
     const btn = document.getElementById("loadMoreRecentBtn");
+    const clearBtn = document.getElementById("clearRecentFiltersBtn");
     const hint = document.getElementById("recentHistoryHint");
     const { query, category } = getRecentFilters();
     const qualifier = query || category ? "matching" : "total";
@@ -347,6 +364,7 @@
       hint.textContent = `Showing ${state.recentSessions.length} of ${state.recentTotal} ${qualifier} tasks.`;
     }
     btn.classList.toggle("hidden", !state.recentHasMore);
+    clearBtn.classList.toggle("hidden", !query && !category);
   }
 
   function buildRecentParams(offset) {
@@ -386,13 +404,11 @@
         <td class="py-2" data-label="Ended">${safeEnd}</td>
         ${canDeleteSessions ? `
           <td class="py-2" data-label="Actions">
-            <button class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit this completed session">
+            <button class="neu-btn neu-btn-sm border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 mr-1" data-edit-session-id="${s.id}" type="button" data-tooltip="Edit this completed session">
               <span class="material-symbols-rounded" aria-hidden="true">edit</span>
-              Edit
             </button>
-            <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this completed session">
+            <button class="neu-btn neu-btn-sm bg-gb-red text-gb-bg0 border-gb-red/80 inline-flex items-center gap-1 text-xs px-2 py-1" data-delete-session-id="${s.id}" type="button" data-tooltip="Delete this completed session">
               <span class="material-symbols-rounded" aria-hidden="true">delete</span>
-              Remove
             </button>
           </td>
         ` : ""}
@@ -409,12 +425,13 @@
       tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const sessionId = Number(btn.getAttribute("data-delete-session-id"));
-          if (!confirm("Delete this past session?")) return;
+          if (!await window.showAppConfirm("Delete this past session?")) return;
           try {
             await postJson("/api/session/delete", { session_id: sessionId });
+            setMessage("Session removed.");
             await loadPageData();
           } catch (err) {
-            alert(err.message || "Could not delete session");
+            setMessage(err.message || "Could not delete session", true);
           }
         });
       });
@@ -426,8 +443,8 @@
     document.getElementById("durationEmpty").classList.toggle("hidden", sessions.length > 0);
     if (!sessions.length) return;
 
-    const textColor = cssRgb("--gb-fg-rgb");
-    const gridColor = cssRgb("--gb-bg2-rgb");
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    const gridColor = window.cssRgb("--gb-bg2-rgb");
     const barColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim();
     const ordered = [...sessions].reverse();
     durationChart = new Chart(document.getElementById("durationChart"), {
@@ -455,6 +472,10 @@
   }
 
   async function loadRecent({ reset = true } = {}) {
+    if (reset) {
+      const tbody = document.getElementById("recentBody");
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
     const offset = reset ? 0 : state.recentSessions.length;
     const params = buildRecentParams(offset);
     const res = await fetch(`/api/users/${targetUserId}/recent-sessions?${params.toString()}`);
@@ -498,7 +519,7 @@
       try {
         await loadRecent({ reset: true });
       } catch (err) {
-        alert(err.message || "Could not load recent sessions");
+        setMessage(err.message || "Could not load recent sessions", true);
       }
     }, 300);
   });
@@ -507,7 +528,7 @@
     try {
       await loadRecent({ reset: true });
     } catch (err) {
-      alert(err.message || "Could not load recent sessions");
+      setMessage(err.message || "Could not load recent sessions", true);
     }
   });
 
@@ -517,7 +538,7 @@
     try {
       await loadRecent({ reset: true });
     } catch (err) {
-      alert(err.message || "Could not load recent sessions");
+      setMessage(err.message || "Could not load recent sessions", true);
     }
   });
 
@@ -526,7 +547,7 @@
     try {
       await loadRecent({ reset: false });
     } catch (err) {
-      alert(err.message || "Could not load recent sessions");
+      setMessage(err.message || "Could not load recent sessions", true);
     }
   });
 
@@ -547,9 +568,10 @@
           note
         });
         closeEditPanel();
+        setMessage("Session updated.");
         await loadPageData();
       } catch (err) {
-        alert(err.message || "Could not update session");
+        setMessage(err.message || "Could not update session", true);
       }
     });
   }

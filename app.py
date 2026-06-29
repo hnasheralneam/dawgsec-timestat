@@ -5,15 +5,15 @@ from flask import Flask, flash, jsonify, redirect, request, session, url_for
 
 import config
 import db
-import security
+from auth import security
 from config import BASE_DIR, DB_PATH
 
-import routes_admin
-import routes_auth
-import routes_pages
-import routes_session_api
-import routes_stats_api
-import routes_user_api
+import routes.admin as routes_admin
+import routes.auth as routes_auth
+import routes.pages as routes_pages
+import routes.session_api as routes_session_api
+import routes.stats_api as routes_stats_api
+import routes.user_api as routes_user_api
 
 
 def create_app() -> Flask:

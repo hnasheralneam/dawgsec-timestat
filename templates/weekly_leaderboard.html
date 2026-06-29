@@ -3,28 +3,41 @@
 {% block header_title %}Weekly Leaderboard{% endblock %}
 {% block header_subtitle %}Top tracked time for the last 7 days.{% endblock %}
 {% block content %}
-<section class="neu-surface p-5">
-  <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
-    <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
-    Full Weekly Rankings
-  </h2>
-  <p id="weekRangeLabel" class="text-xs text-gb-fg/70 mb-2">Last 7 days</p>
-  <div class="overflow-auto">
-    <table class="w-full text-sm responsive-table">
-      <thead class="text-gb-fg/70">
-        <tr>
-          <th class="text-left py-2">Rank</th>
-          <th class="text-left py-2">User</th>
-          <th class="text-right py-2">Hours</th>
-        </tr>
-      </thead>
-      <tbody id="weeklyLeaderboardBody"></tbody>
-    </table>
-  </div>
-  <p id="weeklyLeaderboardEmpty" class="empty-state hidden mt-3">No weekly tracked sessions yet.</p>
-</section>
+<div class="grid lg:grid-cols-2 gap-4">
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+      Full Weekly Rankings
+    </h2>
+    <p id="weekRangeLabel" class="text-xs text-gb-fg/70 mb-2">Last 7 days</p>
+    <div class="overflow-auto">
+      <table class="leaderboard-table">
+        <thead class="text-gb-fg/70">
+          <tr>
+            <th class="text-left">#</th>
+            <th class="text-left">User</th>
+            <th class="text-right">Hours</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyLeaderboardBody"></tbody>
+      </table>
+    </div>
+    <p id="weeklyLeaderboardEmpty" class="empty-state hidden mt-3">No weekly tracked sessions yet.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
+      Hours This Week
+    </h2>
+    <canvas id="weeklyBarChart" height="240"></canvas>
+    <p id="weeklyBarEmpty" class="empty-state hidden mt-3">No weekly tracked sessions yet.</p>
+  </section>
+</div>
 
 <script>
+  const currentUserId = {{ user.id }};
+
   function formatHours(seconds) {
     return (seconds / 3600).toFixed(2);
   }
@@ -32,37 +45,87 @@
   function formatShortDate(ts) {
     return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
+  let barChart = null;
 
   async function loadWeeklyLeaderboard() {
+    const tbody = document.getElementById("weeklyLeaderboardBody");
+    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     const res = await fetch("/api/leaderboard/weekly");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
-    const tbody = document.getElementById("weeklyLeaderboardBody");
     const empty = document.getElementById("weeklyLeaderboardEmpty");
+    const barEmpty = document.getElementById("weeklyBarEmpty");
     const range = document.getElementById("weekRangeLabel");
     tbody.innerHTML = "";
     range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
+
     if (!data.leaderboard.length) {
       empty.classList.remove("hidden");
+      barEmpty.classList.remove("hidden");
+      if (barChart) { barChart.destroy(); barChart = null; }
       return;
     }
     empty.classList.add("hidden");
+    barEmpty.classList.add("hidden");
+
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
-      tr.className = "border-t border-gb-bg2";
+      const isMe = row.user_id === currentUserId;
+      if (isMe) tr.classList.add("font-semibold");
+      const medal = window.MEDALS[row.rank - 1] || "";
       tr.innerHTML = `
-        <td class="py-2" data-label="Rank">#${row.rank}</td>
-        <td class="py-2" data-label="User">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" data-tooltip="View ${row.username}'s profile">
-            <span class="material-symbols-rounded" aria-hidden="true">person</span>
-            ${row.username}
+        <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
+        <td>
+          <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
+            ${row.username}${isMe ? " (you)" : ""}
           </a>
         </td>
-        <td class="py-2 text-right" data-label="Hours" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }
+
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    const gridColor = window.cssRgb("--gb-bg2-rgb");
+    const barColors = data.leaderboard.map((row) =>
+      row.user_id === currentUserId
+        ? `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--gb-green-rgb").trim()} / 0.85)`
+        : `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim()} / 0.75)`
+    );
+
+    if (barChart) barChart.destroy();
+    barChart = new Chart(document.getElementById("weeklyBarChart"), {
+      type: "bar",
+      data: {
+        labels: data.leaderboard.map((r) => r.username),
+        datasets: [{
+          label: "Hours",
+          data: data.leaderboard.map((r) => r.seconds / 3600),
+          backgroundColor: barColors,
+          borderWidth: 0,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        indexAxis: "y",
+        scales: {
+          x: { ticks: { color: textColor }, grid: { color: gridColor } },
+          y: { ticks: { color: textColor }, grid: { color: "transparent" } }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
   }
+
+  document.querySelectorAll(".theme-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      loadWeeklyLeaderboard().catch(() => {
+        document.getElementById("weeklyLeaderboardEmpty").classList.remove("hidden");
+      });
+    });
+  });
 
   loadWeeklyLeaderboard().catch(() => {
     document.getElementById("weeklyLeaderboardEmpty").classList.remove("hidden");

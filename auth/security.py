@@ -6,7 +6,7 @@ from flask import current_app, jsonify, redirect, request, session, url_for
 
 import config
 import db
-import helpers
+from utils import helpers
 
 
 def auth_limit_key(scope: str, username: str) -> str:

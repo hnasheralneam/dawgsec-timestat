@@ -5,11 +5,11 @@ from flask import current_app, jsonify, request, session
 from werkzeug.security import generate_password_hash
 
 import db
-import helpers
-import parsing
-import security
+from utils import helpers
+from utils import parsing
+from auth import security
 
-THEME_PALETTES = {"gruvbox", "nord", "dracula", "solarized", "catppuccin", "custom"}
+THEME_PALETTES = {"gruvbox", "nord", "dracula", "solarized", "catppuccin", "onedark", "custom"}
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 

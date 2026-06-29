@@ -10,7 +10,7 @@
       Live Leaderboard (All Time)
     </h2>
     <div class="overflow-auto max-h-96">
-      <table class="w-full text-sm responsive-table">
+      <table class="leaderboard-table">
         <thead class="text-gb-fg/70">
           <tr>
             <th class="text-left py-2">Rank</th>
@@ -30,6 +30,7 @@
       My Time Breakdown (All Time)
     </h2>
     <canvas id="myChart" height="210"></canvas>
+    <p id="myChartTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="myChartEmpty" class="empty-state hidden mt-3">No personal all-time data yet.</p>
   </section>
 
@@ -39,24 +40,24 @@
       Team Time Breakdown (All Time)
     </h2>
     <canvas id="teamChart" height="210"></canvas>
+    <p id="teamChartTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="teamChartEmpty" class="empty-state hidden mt-3">No team all-time data yet.</p>
   </section>
 </div>
 
 <script>
+  const currentUserId = {{ user.id }};
+
   function formatHours(seconds) {
     return (seconds / 3600).toFixed(2);
   }
 
-  function cssRgb(varName) {
-    return `rgb(${getComputedStyle(document.documentElement).getPropertyValue(varName).trim()})`;
-  }
-
   async function loadLeaderboard() {
+    const tbody = document.getElementById("leaderboardBody");
+    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     const res = await fetch("/api/leaderboard");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load leaderboard");
-    const tbody = document.getElementById("leaderboardBody");
     const empty = document.getElementById("leaderboardEmpty");
     tbody.innerHTML = "";
     if (!data.leaderboard.length) {
@@ -66,16 +67,18 @@
     empty.classList.add("hidden");
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
-      tr.className = "border-t border-gb-bg2";
+      const isMe = row.user_id === currentUserId;
+      const medal = window.MEDALS[row.rank - 1] || "";
+      if (isMe) tr.classList.add("font-semibold");
       tr.innerHTML = `
-        <td class="py-2" data-label="Rank">#${row.rank}</td>
-        <td class="py-2" data-label="User">
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple" data-tooltip="View ${row.username}'s profile">
+        <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">#${row.rank}</span>`}</td>
+        <td>
+          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
             <span class="material-symbols-rounded" aria-hidden="true">person</span>
-            ${row.username}
+            ${row.username}${isMe ? " (you)" : ""}
           </a>
         </td>
-        <td class="py-2 text-right" data-label="Hours" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -84,8 +87,9 @@
   let myChart = null;
   let teamChart = null;
 
-  function renderPie(chartRef, canvasId, labels, values, title, emptyId) {
+  function renderPie(chartRef, canvasId, labels, values, title, emptyId, totalEl) {
     const empty = document.getElementById(emptyId);
+    if (totalEl) document.getElementById(totalEl).classList.add("hidden");
     if (!labels.length) {
       if (chartRef) chartRef.destroy();
       empty.classList.remove("hidden");
@@ -94,17 +98,20 @@
     empty.classList.add("hidden");
     if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
-    const textColor = cssRgb("--gb-fg-rgb");
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    if (totalEl) {
+      const totalHours = values.reduce((a, b) => a + b, 0).toFixed(2);
+      const el = document.getElementById(totalEl);
+      el.textContent = `Total: ${totalHours} h`;
+      el.classList.remove("hidden");
+    }
     return new Chart(ctx, {
       type: "doughnut",
       data: {
         labels,
         datasets: [{
           data: values,
-          backgroundColor: [
-            "#458588", "#98971a", "#d79921", "#cc241d", "#b16286",
-            "#689d6a", "#b57614", "#af3a03", "#076678", "#8f3f71"
-          ]
+          backgroundColor: window.themeColors()
         }]
       },
       options: {
@@ -124,7 +131,8 @@
       data.my_categories.map(x => x.name),
       data.my_categories.map(x => x.seconds / 3600),
       "Your Hours",
-      "myChartEmpty"
+      "myChartEmpty",
+      "myChartTotalHours"
     );
 
     teamChart = renderPie(
@@ -133,7 +141,8 @@
       data.team_categories.map(x => x.name),
       data.team_categories.map(x => x.seconds / 3600),
       "Team Hours",
-      "teamChartEmpty"
+      "teamChartEmpty",
+      "teamChartTotalHours"
     );
   }
 
