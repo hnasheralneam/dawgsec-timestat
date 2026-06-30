@@ -6,27 +6,18 @@ Minimal Flask + SQLite web app for tracking cyber competition preparation time, 
 
 ## Quick start (local)
 
-1. Create venv and install dependencies:
+```bash
+./setup.sh
+```
+
+This creates a `.venv`, installs dependencies, and writes a `.env` file with a
+generated `SECRET_KEY`. Edit `.env` to set `ADMIN_USERNAME` + `ADMIN_PASSWORD`
+if you need `/admin/login`.
+
+Then run:
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-2. Create your local env file:
-
-```bash
-cp deploy/timestat.env.example .env
-```
-
-3. Edit `.env` and set at least:
-- `SECRET_KEY` (required)
-- `ADMIN_USERNAME` + `ADMIN_PASSWORD` (required for `/admin/login`)
-
-4. Run:
-
-```bash
 python app.py
 ```
 
@@ -71,35 +62,16 @@ All supported env values are in `deploy/timestat.env.example`.
 
 ## Deploy (systemd + Gunicorn)
 
-1. Install app and dependencies:
+**Linux with systemd only** — this script relies on `systemctl` and will not work on macOS or non-systemd distros.
 
 ```bash
-sudo mkdir -p /opt/timestat /etc/timestat
-sudo rsync -a ./ /opt/timestat/
-cd /opt/timestat
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+./deploy.sh
 ```
 
-2. Create runtime user + env file:
-
-```bash
-sudo useradd --system --home /opt/timestat --shell /usr/sbin/nologin timestat || true
-sudo cp deploy/timestat.env.example /etc/timestat/timestat.env
-sudo chmod 640 /etc/timestat/timestat.env
-sudo chown root:timestat /etc/timestat/timestat.env
-sudo chown -R timestat:www-data /opt/timestat
-```
-
-3. Install and start service:
-
-```bash
-sudo cp deploy/timestat.service /etc/systemd/system/timestat.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now timestat
-sudo systemctl status timestat --no-pager
-```
+This installs the app to `/opt/timestat`, creates a `timestat` system user,
+writes `/etc/timestat/timestat.env` with a generated `SECRET_KEY` (edit it to
+set `ADMIN_USERNAME`/`ADMIN_PASSWORD`), and installs + starts the
+`timestat` systemd service. Requires `sudo`.
 
 Useful:
 
