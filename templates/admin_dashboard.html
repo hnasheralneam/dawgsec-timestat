@@ -190,46 +190,12 @@
     tasks: []
   };
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
-  function formatDuration(total) {
-    const sec = Math.max(0, Math.floor(total || 0));
-    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  }
-
-  function tsToLocal(ts) {
-    if (!ts) return "-";
-    return new Date(ts * 1000).toLocaleString();
-  }
+  // escapeHtml, formatDuration, tsToLocal, and postJson are provided
+  // globally by static/js/common.js (loaded from base.html).
 
   function setTaskModalMessage(text, isError = false) {
     taskModalMessage.textContent = text || "";
     taskModalMessage.className = `mt-3 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
-  }
-
-  async function postJson(url, body = {}) {
-    const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrfToken
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
   }
 
   function openTaskModal() {

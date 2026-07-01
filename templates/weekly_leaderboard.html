@@ -30,7 +30,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">bar_chart</span>
       Hours This Week
     </h2>
-    <canvas id="weeklyBarChart" height="240"></canvas>
+    <canvas id="weeklyBarChart" height="240" role="img" aria-label="Bar chart of hours tracked this week per user"></canvas>
     <p id="weeklyBarEmpty" class="empty-state hidden mt-3">No weekly tracked sessions yet.</p>
   </section>
 </div>
@@ -38,53 +38,69 @@
 <script>
   const currentUserId = {{ user.id }};
 
-  function formatHours(seconds) {
-    return (seconds / 3600).toFixed(2);
-  }
+  // formatHours is provided globally by static/js/common.js.
 
   function formatShortDate(ts) {
     return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
   let barChart = null;
+  let weeklyLeaderboardLoadedOnce = false;
+  let lastWeeklyLeaderboardJson = null;
 
   async function loadWeeklyLeaderboard() {
     const tbody = document.getElementById("weeklyLeaderboardBody");
-    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    if (!weeklyLeaderboardLoadedOnce) {
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
     const res = await fetch("/api/leaderboard/weekly");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
+    weeklyLeaderboardLoadedOnce = true;
+
     const empty = document.getElementById("weeklyLeaderboardEmpty");
     const barEmpty = document.getElementById("weeklyBarEmpty");
     const range = document.getElementById("weekRangeLabel");
-    tbody.innerHTML = "";
     range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
 
     if (!data.leaderboard.length) {
       empty.classList.remove("hidden");
       barEmpty.classList.remove("hidden");
       if (barChart) { barChart.destroy(); barChart = null; }
+      lastWeeklyLeaderboardJson = JSON.stringify(data.leaderboard);
+      tbody.innerHTML = "";
       return;
     }
     empty.classList.add("hidden");
     barEmpty.classList.add("hidden");
 
-    for (const row of data.leaderboard) {
-      const tr = document.createElement("tr");
-      const isMe = row.user_id === currentUserId;
-      if (isMe) tr.classList.add("font-semibold");
-      const medal = window.MEDALS[row.rank - 1] || "";
-      tr.innerHTML = `
-        <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
-        <td>
-          <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
-            ${row.username}${isMe ? " (you)" : ""}
-          </a>
-        </td>
-        <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
-      `;
-      tbody.appendChild(tr);
+    const serialized = JSON.stringify(data.leaderboard);
+    const tableChanged = serialized !== lastWeeklyLeaderboardJson;
+    lastWeeklyLeaderboardJson = serialized;
+
+    if (tableChanged) {
+      tbody.innerHTML = "";
+      for (const row of data.leaderboard) {
+        const tr = document.createElement("tr");
+        const isMe = row.user_id === currentUserId;
+        if (isMe) tr.classList.add("font-semibold");
+        const medal = window.MEDALS[row.rank - 1] || "";
+        tr.innerHTML = `
+          <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
+          <td>
+            <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
+              ${row.username}${isMe ? " (you)" : ""}
+            </a>
+          </td>
+          <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
     }
 
+    // Chart colors can change independently of the leaderboard data (e.g.
+    // on theme toggle), so it's always refreshed. renderOrUpdateChart
+    // updates the existing chart in place rather than destroying/recreating
+    // it, so this doesn't cause a visible flash.
     const textColor = window.cssRgb("--gb-fg-rgb");
     const gridColor = window.cssRgb("--gb-bg2-rgb");
     const barColors = data.leaderboard.map((row) =>
@@ -93,8 +109,7 @@
         : `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim()} / 0.75)`
     );
 
-    if (barChart) barChart.destroy();
-    barChart = new Chart(document.getElementById("weeklyBarChart"), {
+    barChart = window.renderOrUpdateChart(barChart, document.getElementById("weeklyBarChart"), {
       type: "bar",
       data: {
         labels: data.leaderboard.map((r) => r.username),

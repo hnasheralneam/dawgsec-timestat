@@ -17,6 +17,12 @@ def get_db() -> sqlite3.Connection:
         g.db = sqlite3.connect(current_app.config["DATABASE"])
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        # WAL allows concurrent readers alongside a writer (important with
+        # multiple Gunicorn worker processes sharing one SQLite file), and
+        # busy_timeout makes writers block-and-retry for up to 5s instead of
+        # immediately raising "database is locked" under contention.
+        g.db.execute("PRAGMA journal_mode = WAL")
+        g.db.execute("PRAGMA busy_timeout = 5000")
     return g.db
 
 
@@ -226,6 +232,19 @@ def init_db() -> None:
     )
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_user_end_ts ON sessions(user_id, end_ts)"
+    )
+    # DB-level guard against a user ending up with two concurrently active
+    # (running/paused) sessions when two requests race each other (realistic
+    # under Gunicorn's multiple worker processes). The check-then-insert in
+    # routes/session_api.py is not itself atomic across processes; this
+    # unique index makes the second concurrent insert/update fail with
+    # sqlite3.IntegrityError instead of silently creating a duplicate.
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_one_active_per_user
+        ON sessions(user_id)
+        WHERE status IN ('running', 'paused')
+        """
     )
 
     category_count = int(

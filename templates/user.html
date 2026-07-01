@@ -34,7 +34,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
       Category Breakdown
     </h2>
-    <canvas id="categoryChart" height="240"></canvas>
+    <canvas id="categoryChart" height="240" role="img" aria-label="Doughnut chart of this user's tracked hours by category"></canvas>
     <p id="categoryTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="categoryEmpty" class="hidden mt-3 empty-state">No session data yet.</p>
   </section>
@@ -44,7 +44,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">monitoring</span>
       Recent Session Durations
     </h2>
-    <canvas id="durationChart" height="240"></canvas>
+    <canvas id="durationChart" height="240" role="img" aria-label="Bar chart of this user's recent session durations"></canvas>
     <p id="durationEmpty" class="hidden mt-3 empty-state">No completed sessions yet.</p>
   </section>
 
@@ -149,21 +149,14 @@
     recentOffset: 0,
     recentTotal: 0,
     recentHasMore: false,
+    recentLoadedOnce: false,
+    lastRenderedRecentJson: null,
     activityDays: [],
     activityMaxSeconds: 0
   };
 
-  function formatDuration(total) {
-    const sec = Math.max(0, Math.floor(total));
-    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  }
-
-  function tsToLocal(ts) {
-    return new Date(ts * 1000).toLocaleString();
-  }
+  // formatDuration, tsToLocal, escapeHtml, and postJson are provided
+  // globally by static/js/common.js (loaded from base.html).
 
   function activityAlphas() {
     const isDark = document.documentElement.classList.contains("dark");
@@ -272,35 +265,11 @@
     gridHost.appendChild(wrapper);
   }
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
-  async function postJson(url, body = {}) {
-    const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrfToken
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
-  }
-
   function renderCategoryChart(rows) {
-    if (categoryChart) categoryChart.destroy();
     document.getElementById("categoryEmpty").classList.toggle("hidden", rows.length > 0);
     const totalEl = document.getElementById("categoryTotalHours");
     if (!rows.length) {
+      if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
       if (totalEl) totalEl.classList.add("hidden");
       return;
     }
@@ -310,7 +279,7 @@
       totalEl.textContent = `Total: ${totalHours} h`;
       totalEl.classList.remove("hidden");
     }
-    categoryChart = new Chart(document.getElementById("categoryChart"), {
+    categoryChart = window.renderOrUpdateChart(categoryChart, document.getElementById("categoryChart"), {
       type: "doughnut",
       data: {
         labels: rows.map((x) => x.name),
@@ -382,6 +351,11 @@
     const tbody = document.getElementById("recentBody");
     const visibleSessions = sessions;
     updateRecentHistoryControls();
+
+    const serialized = JSON.stringify(visibleSessions);
+    if (serialized === state.lastRenderedRecentJson) return;
+    state.lastRenderedRecentJson = serialized;
+
     tbody.innerHTML = "";
     if (!visibleSessions.length) {
       document.getElementById("recentEmpty").classList.remove("hidden");
@@ -439,15 +413,17 @@
   }
 
   function renderDurationChart(sessions) {
-    if (durationChart) durationChart.destroy();
     document.getElementById("durationEmpty").classList.toggle("hidden", sessions.length > 0);
-    if (!sessions.length) return;
+    if (!sessions.length) {
+      if (durationChart) { durationChart.destroy(); durationChart = null; }
+      return;
+    }
 
     const textColor = window.cssRgb("--gb-fg-rgb");
     const gridColor = window.cssRgb("--gb-bg2-rgb");
     const barColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim();
     const ordered = [...sessions].reverse();
-    durationChart = new Chart(document.getElementById("durationChart"), {
+    durationChart = window.renderOrUpdateChart(durationChart, document.getElementById("durationChart"), {
       type: "bar",
       data: {
         labels: ordered.map((_, idx) => `#${idx + 1}`),
@@ -472,7 +448,7 @@
   }
 
   async function loadRecent({ reset = true } = {}) {
-    if (reset) {
+    if (reset && !state.recentLoadedOnce) {
       const tbody = document.getElementById("recentBody");
       if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
@@ -488,6 +464,7 @@
     }
     state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
     state.recentHasMore = Boolean(data.has_more);
+    state.recentLoadedOnce = true;
     renderRecentTable(state.recentSessions);
     renderDurationChart(state.recentSessions);
   }

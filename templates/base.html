@@ -249,10 +249,14 @@
     };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
+  {% set _no_chart_endpoints = ["login", "register", "admin_login"] %}
+  {% if request.endpoint not in _no_chart_endpoints %}
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  {% endif %}
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:FILL@0..1">
   <link rel="icon" href="{{ url_for('static', filename='logo.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
 </head>
 <body class="min-h-screen">
   <div class="max-w-6xl mx-auto px-4 py-6">
@@ -490,7 +494,7 @@
       window.themeColors = function () {
         return [
           "--gb-blue-rgb", "--gb-green-rgb", "--gb-yellow-rgb", "--gb-red-rgb", "--gb-purple-rgb",
-          "--gb-aqua-rgb", "--gb-fg-rgb", "--gb-red-rgb", "--gb-blue-rgb", "--gb-purple-rgb"
+          "--gb-aqua-rgb", "--gb-fg-rgb", "--gb-bg2-rgb", "--gb-shadow-rgb", "--gb-highlight-rgb"
         ].map(window.cssRgb);
       };
 
@@ -759,20 +763,7 @@
         setLoginCodeDisplay(true);
       }
 
-      async function postJson(url, body = {}) {
-        const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken
-          },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Request failed");
-        return data;
-      }
+      const postJson = window.postJson;
 
       document.getElementById("openSettingsBtn").addEventListener("click", async () => {
         try {

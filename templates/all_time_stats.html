@@ -29,7 +29,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
       My Time Breakdown (All Time)
     </h2>
-    <canvas id="myChart" height="210"></canvas>
+    <canvas id="myChart" height="210" role="img" aria-label="Doughnut chart of your all-time tracked hours by category"></canvas>
     <p id="myChartTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="myChartEmpty" class="empty-state hidden mt-3">No personal all-time data yet.</p>
   </section>
@@ -39,7 +39,7 @@
       <span class="material-symbols-rounded" aria-hidden="true">groups</span>
       Team Time Breakdown (All Time)
     </h2>
-    <canvas id="teamChart" height="210"></canvas>
+    <canvas id="teamChart" height="210" role="img" aria-label="Doughnut chart of team all-time tracked hours by category"></canvas>
     <p id="teamChartTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="teamChartEmpty" class="empty-state hidden mt-3">No team all-time data yet.</p>
   </section>
@@ -48,17 +48,28 @@
 <script>
   const currentUserId = {{ user.id }};
 
-  function formatHours(seconds) {
-    return (seconds / 3600).toFixed(2);
-  }
+  // formatHours, escapeHtml, postJson, and renderOrUpdateChart are provided
+  // globally by static/js/common.js (loaded from base.html).
+
+  let leaderboardLoadedOnce = false;
+  let lastLeaderboardJson = null;
 
   async function loadLeaderboard() {
     const tbody = document.getElementById("leaderboardBody");
-    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    if (!leaderboardLoadedOnce) {
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
     const res = await fetch("/api/leaderboard");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load leaderboard");
+    leaderboardLoadedOnce = true;
+
     const empty = document.getElementById("leaderboardEmpty");
+
+    const serialized = JSON.stringify(data.leaderboard);
+    if (serialized === lastLeaderboardJson) return;
+    lastLeaderboardJson = serialized;
+
     tbody.innerHTML = "";
     if (!data.leaderboard.length) {
       empty.classList.remove("hidden");
@@ -96,7 +107,6 @@
       return null;
     }
     empty.classList.add("hidden");
-    if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
     const textColor = window.cssRgb("--gb-fg-rgb");
     if (totalEl) {
@@ -105,7 +115,7 @@
       el.textContent = `Total: ${totalHours} h`;
       el.classList.remove("hidden");
     }
-    return new Chart(ctx, {
+    return window.renderOrUpdateChart(chartRef, ctx, {
       type: "doughnut",
       data: {
         labels,

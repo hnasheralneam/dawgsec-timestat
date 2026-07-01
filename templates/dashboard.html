@@ -52,7 +52,7 @@
           <span class="material-symbols-rounded" aria-hidden="true">cancel</span>
           Cancel
         </button></div>
-        <div text="4xl">
+        <div>
         <button id="reduce10Btn" class="neu-btn bg-gb-aqua text-gb-bg0 border-gb-aqua/80 py-1 px-4 mt-3 inline-flex items-center gap-2 hidden" data-tooltip="Remove 10 minutes">
           <span class="material-symbols-rounded" aria-hidden="true">replay_10</span>
         </button>
@@ -106,7 +106,7 @@
       Personal Breakdown
     </h2>
     <p class="text-xs text-gb-fg/70 mb-2">Time share by category across the last 7 days.</p>
-    <canvas id="myWeekChart" height="210"></canvas>
+    <canvas id="myWeekChart" height="210" role="img" aria-label="Doughnut chart of your tracked hours by category over the last 7 days"></canvas>
     <p id="myWeekTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="myWeekEmpty" class="empty-state hidden mt-3">No personal session data in the last 7 days.</p>
   </section>
@@ -117,9 +117,19 @@
       Team Breakdown
     </h2>
     <p class="text-xs text-gb-fg/70 mb-2">Combined team time by category across the last 7 days.</p>
-    <canvas id="teamWeekChart" height="210"></canvas>
+    <canvas id="teamWeekChart" height="210" role="img" aria-label="Doughnut chart of team tracked hours by category over the last 7 days"></canvas>
     <p id="teamWeekTotalHours" class="mt-1 text-xs text-gb-fg/70 text-center hidden"></p>
     <p id="teamWeekEmpty" class="empty-state hidden mt-3">No team session data in the last 7 days.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-1 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">show_chart</span>
+      Daily Trend
+    </h2>
+    <p class="text-xs text-gb-fg/70 mb-2">Your tracked hours per day over the last 14 days.</p>
+    <canvas id="dailyTrendChart" height="210" role="img" aria-label="Line chart of your tracked hours per day over the last 14 days"></canvas>
+    <p id="dailyTrendEmpty" class="empty-state hidden mt-3">No personal session data in the last 14 days.</p>
   </section>
 
   <section class="lg:col-span-3 neu-surface p-5">
@@ -210,53 +220,21 @@
     recentOffset: 0,
     recentTotal: 0,
     recentHasMore: false,
+    recentLoadedOnce: false,
+    lastRenderedRecentJson: null,
+    weeklyLeaderboardLoaded: false,
+    lastWeeklyLeaderboardJson: null,
+    lastPresenceJson: null,
     collabSinceTs: null,
     collabInitialized: false,
     shownStartNotifications: new Set()
   };
 
-  function formatDuration(total) {
-    const sec = Math.max(0, Math.floor(total));
-    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  }
-
-  function formatHours(seconds) {
-    return (seconds / 3600).toFixed(2);
-  }
-
-  function tsToLocal(ts) {
-    return new Date(ts * 1000).toLocaleString();
-  }
+  // formatDuration, formatHours, tsToLocal, escapeHtml, and postJson are
+  // provided globally by static/js/common.js (loaded from base.html).
 
   function formatShortDate(ts) {
     return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
-  async function postJson(url, body = {}) {
-    const csrfToken = window.getCsrfToken ? window.getCsrfToken() : "";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrfToken
-      },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Request failed");
-    return data;
   }
 
   function setMessage(text, isError = false) {
@@ -279,6 +257,10 @@
   }
 
   function renderPresence(rows) {
+    const serialized = JSON.stringify(rows);
+    if (serialized === state.lastPresenceJson) return;
+    state.lastPresenceJson = serialized;
+
     const section = document.getElementById("presenceSection");
     const list = document.getElementById("presenceList");
     list.innerHTML = "";
@@ -405,15 +387,23 @@
 
   async function loadWeeklyLeaderboard() {
     const tbody = document.getElementById("weeklyLeaderboardBody");
-    tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    if (!state.weeklyLeaderboardLoaded) {
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
     const res = await fetch("/api/leaderboard/weekly?limit=5");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
+    state.weeklyLeaderboardLoaded = true;
+
     const empty = document.getElementById("weeklyLeaderboardEmpty");
     const range = document.getElementById("weeklyRangeLabel");
-    tbody.innerHTML = "";
     range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
 
+    const serialized = JSON.stringify(data.leaderboard);
+    if (serialized === state.lastWeeklyLeaderboardJson) return;
+    state.lastWeeklyLeaderboardJson = serialized;
+
+    tbody.innerHTML = "";
     if (!data.leaderboard.length) {
       empty.classList.remove("hidden");
       return;
@@ -439,6 +429,7 @@
 
   let myWeekChart = null;
   let teamWeekChart = null;
+  let dailyTrendChart = null;
 
   function renderPie(chartRef, canvasId, labels, values, title, emptyId, totalEl) {
     const empty = document.getElementById(emptyId);
@@ -449,7 +440,6 @@
       return null;
     }
     empty.classList.add("hidden");
-    if (chartRef) chartRef.destroy();
     const ctx = document.getElementById(canvasId);
     const textColor = window.cssRgb("--gb-fg-rgb");
     if (totalEl) {
@@ -458,7 +448,7 @@
       el.textContent = `Total: ${totalHours} h`;
       el.classList.remove("hidden");
     }
-    return new Chart(ctx, {
+    return window.renderOrUpdateChart(chartRef, ctx, {
       type: "doughnut",
       data: {
         labels,
@@ -496,6 +486,60 @@
       "teamWeekEmpty",
       "teamWeekTotalHours"
     );
+  }
+
+  function renderDailyTrend(days) {
+    const empty = document.getElementById("dailyTrendEmpty");
+    const hasData = days.some((d) => d.seconds > 0);
+    if (!days.length || !hasData) {
+      if (dailyTrendChart) { dailyTrendChart.destroy(); dailyTrendChart = null; }
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    const textColor = window.cssRgb("--gb-fg-rgb");
+    const gridColor = window.cssRgb("--gb-bg2-rgb");
+    const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-green-rgb").trim();
+    const ctx = document.getElementById("dailyTrendChart");
+    dailyTrendChart = window.renderOrUpdateChart(dailyTrendChart, ctx, {
+      type: "line",
+      data: {
+        labels: days.map((d) => new Date(d.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
+        datasets: [{
+          label: "Hours",
+          data: days.map((d) => d.seconds / 3600),
+          borderColor: `rgb(${lineColor})`,
+          backgroundColor: `rgb(${lineColor} / 0.2)`,
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: textColor }, grid: { color: gridColor } },
+          y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+  }
+
+  async function loadDailyTrend() {
+    const res = await fetch(`/api/users/${currentUserId}/activity-grid?days=14`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load daily trend");
+    const days = (data.days || []).map((d) => ({ ...d }));
+    if (state.current && days.length) {
+      // The activity-grid endpoint only totals completed sessions, so an
+      // in-progress session's elapsed time is missing from today's bucket
+      // (the last entry, since the endpoint always includes today). Fold it
+      // in so today's point matches what the other dashboard charts show.
+      days[days.length - 1].seconds += state.timerBase;
+    }
+    renderDailyTrend(days);
   }
 
   function getRecentFilters() {
@@ -552,6 +596,11 @@
     const empty = document.getElementById("recentEmpty");
     const visibleSessions = sessions;
     updateRecentHistoryControls();
+
+    const serialized = JSON.stringify(visibleSessions);
+    if (serialized === state.lastRenderedRecentJson) return;
+    state.lastRenderedRecentJson = serialized;
+
     tbody.innerHTML = "";
     if (!visibleSessions.length) {
       empty.classList.remove("hidden");
@@ -608,6 +657,10 @@
   }
 
   async function loadRecent({ reset = true } = {}) {
+    if (reset && !state.recentLoadedOnce) {
+      const tbody = document.getElementById("recentBody");
+      tbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
     const offset = reset ? 0 : state.recentSessions.length;
     const params = buildRecentParams(offset);
     const res = await fetch(`/api/recent-sessions?${params.toString()}`);
@@ -620,19 +673,38 @@
     }
     state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
     state.recentHasMore = Boolean(data.has_more);
+    state.recentLoadedOnce = true;
     renderRecent(state.recentSessions);
   }
 
+  let refreshInFlight = false;
+  let refreshQueued = false;
+
   async function refreshAll() {
+    if (refreshInFlight) {
+      // A refresh is already running (timer- or action-triggered). Queue
+      // another pass instead of firing overlapping requests that could
+      // race and let a stale response clobber a fresher one.
+      refreshQueued = true;
+      return;
+    }
+    refreshInFlight = true;
     try {
       await Promise.all([
         loadStatus(),
         loadWeeklyLeaderboard(),
         loadStats(),
+        loadDailyTrend(),
         loadRecent({ reset: true })
       ]);
     } catch (_err) {
       setMessage("Could not refresh data.", true);
+    } finally {
+      refreshInFlight = false;
+      if (refreshQueued) {
+        refreshQueued = false;
+        refreshAll();
+      }
     }
   }
 
@@ -781,6 +853,7 @@
     Promise.all([
       loadWeeklyLeaderboard(),
       loadStats(),
+      loadDailyTrend(),
       loadRecent({ reset: true })
     ]).catch(() => {
       setMessage("Could not refresh dashboard data.", true);

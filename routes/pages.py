@@ -1,6 +1,5 @@
 from flask import flash, redirect, render_template, url_for
 
-import db
 from services import queries
 from auth import security
 
@@ -9,10 +8,7 @@ def register_routes(app):
     @app.get("/dashboard")
     @security.login_required
     def dashboard():
-        conn = db.get_db()
-        categories = conn.execute(
-            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
-        ).fetchall()
+        categories = queries.get_categories()
         user = queries.get_current_user()
         return render_template(
             "dashboard.html", categories=categories, user=user, active_page="dashboard"
@@ -42,10 +38,7 @@ def register_routes(app):
             flash("User not found.", "error")
             return redirect(url_for("dashboard"))
         current_user = queries.get_current_user()
-        conn = db.get_db()
-        categories = conn.execute(
-            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
-        ).fetchall()
+        categories = queries.get_categories()
         return render_template(
             "user.html",
             user=current_user,

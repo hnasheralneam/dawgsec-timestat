@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .venv/
 timestat.db
+timestat.db-wal
+timestat.db-shm
 backups/
 venv/
 .env

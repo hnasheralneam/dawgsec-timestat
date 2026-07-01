@@ -4,6 +4,7 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 import config
 import db
+from services import queries
 from utils import helpers
 from utils import parsing
 from auth import security
@@ -82,9 +83,7 @@ def register_routes(app):
             }
             for row in rows
         ]
-        categories = conn.execute(
-            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
-        ).fetchall()
+        categories = queries.get_categories()
         return render_template(
             "admin_dashboard.html",
             users=users,

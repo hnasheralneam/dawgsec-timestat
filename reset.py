@@ -1,6 +1,7 @@
-import secrets
 import sqlite3
 from werkzeug.security import generate_password_hash
+
+from utils.helpers import generate_login_code
 
 
 def main() -> None:
@@ -9,7 +10,7 @@ def main() -> None:
     if not username:
         raise SystemExit("Username is required.")
 
-    new_code = f"{secrets.randbelow(1_000_000):06d}"
+    new_code = generate_login_code()
 
     conn = sqlite3.connect(db_path)
     try:

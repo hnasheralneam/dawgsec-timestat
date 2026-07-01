@@ -1,7 +1,10 @@
+import logging
 import os
 import secrets
+import sys
 
 from flask import Flask, flash, jsonify, redirect, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
 import db
@@ -15,13 +18,34 @@ import routes.session_api as routes_session_api
 import routes.stats_api as routes_stats_api
 import routes.user_api as routes_user_api
 
+logger = logging.getLogger("timestat")
+
 
 def create_app() -> Flask:
     config.load_env_file(os.path.join(BASE_DIR, ".env"))
     config.load_env_file("/etc/timestat/timestat.env")
 
     app = Flask(__name__)
-    app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
+
+    debug_mode = os.environ.get("FLASK_DEBUG", "").strip() == "1"
+    secret_key = os.environ.get("SECRET_KEY")
+    if not secret_key:
+        if not debug_mode:
+            raise RuntimeError(
+                "SECRET_KEY is not set. Refusing to start outside of debug mode. "
+                "Set SECRET_KEY in the environment (see deploy/timestat.env.example), "
+                "or set FLASK_DEBUG=1 for local development only."
+            )
+        secret_key = secrets.token_urlsafe(32)
+        warning = (
+            "SECRET_KEY is not set; falling back to a random key because "
+            "FLASK_DEBUG=1. Sessions and CSRF tokens will not survive a restart. "
+            "This is not safe outside of local development."
+        )
+        logger.warning(warning)
+        print(f"WARNING: {warning}", file=sys.stderr)
+    app.secret_key = secret_key
+
     app.config["DATABASE"] = DB_PATH
     app.config["ADMIN_USERNAME"] = (os.environ.get("ADMIN_USERNAME") or "").strip()
     app.config["ADMIN_PASSWORD"] = os.environ.get("ADMIN_PASSWORD") or ""
@@ -34,6 +58,24 @@ def create_app() -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = (
         os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"}
     )
+
+    trusted_proxy_count_raw = os.environ.get("TRUSTED_PROXY_COUNT", "").strip()
+    try:
+        trusted_proxy_count = (
+            int(trusted_proxy_count_raw)
+            if trusted_proxy_count_raw
+            else config.DEFAULT_TRUSTED_PROXY_COUNT
+        )
+    except ValueError:
+        trusted_proxy_count = config.DEFAULT_TRUSTED_PROXY_COUNT
+    trusted_proxy_count = max(0, trusted_proxy_count)
+    app.config["TRUSTED_PROXY_COUNT"] = trusted_proxy_count
+    if trusted_proxy_count > 0:
+        # Only trust X-Forwarded-For when we know exactly how many reverse
+        # proxy hops sit in front of us; ProxyFix validates and strips
+        # exactly that many entries so the header can't be spoofed by a
+        # client to bypass rate limiting (see utils.helpers.client_addr).
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_proxy_count)
 
     @app.context_processor
     def inject_template_context():

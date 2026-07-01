@@ -30,6 +30,13 @@ def get_active_session(user_id: int):
     ).fetchone()
 
 
+def get_categories():
+    conn = db.get_db()
+    return conn.execute(
+        "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+
+
 def get_user_by_id(user_id: int):
     conn = db.get_db()
     return conn.execute(

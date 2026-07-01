@@ -1,3 +1,5 @@
+import sqlite3
+
 from flask import jsonify, request, session
 
 import db
@@ -86,14 +88,18 @@ def register_routes(app):
             return jsonify({"error": "Finish your current session first"}), 400
 
         ts = db.now_ts()
-        conn.execute(
-            """
-            INSERT INTO sessions(user_id, category_name, note, start_ts, status, created_ts)
-            VALUES(?, ?, ?, ?, 'running', ?)
-            """,
-            (user_id, category["name"], note, ts, ts),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                """
+                INSERT INTO sessions(user_id, category_name, note, start_ts, status, created_ts)
+                VALUES(?, ?, ?, ?, 'running', ?)
+                """,
+                (user_id, category["name"], note, ts, ts),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return jsonify({"error": "session already active"}), 409
         return jsonify({"ok": True})
 
     @app.post("/api/session/pause")
@@ -106,11 +112,15 @@ def register_routes(app):
 
         ts = db.now_ts()
         conn = db.get_db()
-        conn.execute(
-            "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ?",
-            (ts, active["id"]),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ?",
+                (ts, active["id"]),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return jsonify({"error": "session already active"}), 409
         return jsonify({"ok": True})
 
     @app.post("/api/session/resume")
@@ -124,17 +134,21 @@ def register_routes(app):
         ts = db.now_ts()
         extra_paused = ts - int(active["pause_started_ts"] or ts)
         conn = db.get_db()
-        conn.execute(
-            """
-            UPDATE sessions
-            SET status = 'running',
-                paused_seconds = paused_seconds + ?,
-                pause_started_ts = NULL
-            WHERE id = ?
-            """,
-            (extra_paused, active["id"]),
-        )
-        conn.commit()
+        try:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET status = 'running',
+                    paused_seconds = paused_seconds + ?,
+                    pause_started_ts = NULL
+                WHERE id = ?
+                """,
+                (extra_paused, active["id"]),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return jsonify({"error": "session already active"}), 409
         return jsonify({"ok": True})
 
     @app.post("/api/session/finish")
@@ -183,7 +197,7 @@ def register_routes(app):
     def api_adjust_session():
         payload = request.get_json(silent=True) or {}
         seconds = payload.get("seconds")
-        if not isinstance(seconds, int):
+        if not isinstance(seconds, int) or isinstance(seconds, bool):
             return jsonify({"error": "seconds must be an integer"}), 400
         if seconds <= 0:
             return jsonify({"error": "seconds must be greater than zero"}), 400
@@ -216,7 +230,7 @@ def register_routes(app):
     def api_delete_session():
         payload = request.get_json(silent=True) or {}
         session_id = payload.get("session_id")
-        if not isinstance(session_id, int):
+        if not isinstance(session_id, int) or isinstance(session_id, bool):
             return jsonify({"error": "session_id must be an integer"}), 400
 
         user_id = int(session["user_id"])
@@ -243,7 +257,7 @@ def register_routes(app):
         category_name, category_error = parsing.parse_category_name(payload.get("category_name"))
         note, note_error = parsing.parse_note(payload.get("note"))
 
-        if not isinstance(session_id, int):
+        if not isinstance(session_id, int) or isinstance(session_id, bool):
             return jsonify({"error": "session_id must be an integer"}), 400
         if category_error:
             return jsonify({"error": category_error}), 400
