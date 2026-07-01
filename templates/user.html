@@ -40,12 +40,13 @@
   </section>
 
   <section class="neu-surface p-5">
-    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
-      <span class="material-symbols-rounded" aria-hidden="true">monitoring</span>
-      Recent Session Durations
+    <h2 class="font-semibold text-lg mb-1 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">show_chart</span>
+      Daily Trend
     </h2>
-    <canvas id="durationChart" height="240" role="img" aria-label="Bar chart of this user's recent session durations"></canvas>
-    <p id="durationEmpty" class="hidden mt-3 empty-state">No completed sessions yet.</p>
+    <p class="text-xs text-gb-fg/70 mb-2">Tracked hours per day over the last 14 days.</p>
+    <canvas id="dailyTrendChart" height="210" role="img" aria-label="Line chart of tracked hours per day over the last 14 days"></canvas>
+    <p id="dailyTrendEmpty" class="hidden mt-3 empty-state">No activity data yet.</p>
   </section>
 
   <section class="lg:col-span-2 neu-surface p-5">
@@ -142,7 +143,7 @@
     msgEl.className = `mt-2 text-sm ${isError ? "text-gb-red" : "text-gb-green"}`;
   }
   let categoryChart = null;
-  let durationChart = null;
+  let dailyTrendChart = null;
   const state = {
     recentSessions: [],
     recentLimit: 10,
@@ -412,36 +413,39 @@
     }
   }
 
-  function renderDurationChart(sessions) {
-    document.getElementById("durationEmpty").classList.toggle("hidden", sessions.length > 0);
-    if (!sessions.length) {
-      if (durationChart) { durationChart.destroy(); durationChart = null; }
+  function renderDailyTrend(days) {
+    const empty = document.getElementById("dailyTrendEmpty");
+    const hasData = days.some((d) => d.seconds > 0);
+    if (!days.length || !hasData) {
+      if (dailyTrendChart) { dailyTrendChart.destroy(); dailyTrendChart = null; }
+      empty.classList.remove("hidden");
       return;
     }
+    empty.classList.add("hidden");
 
     const textColor = window.cssRgb("--gb-fg-rgb");
     const gridColor = window.cssRgb("--gb-bg2-rgb");
-    const barColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim();
-    const ordered = [...sessions].reverse();
-    durationChart = window.renderOrUpdateChart(durationChart, document.getElementById("durationChart"), {
-      type: "bar",
+    const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--gb-green-rgb").trim();
+    dailyTrendChart = window.renderOrUpdateChart(dailyTrendChart, document.getElementById("dailyTrendChart"), {
+      type: "line",
       data: {
-        labels: ordered.map((_, idx) => `#${idx + 1}`),
+        labels: days.map((d) => new Date(`${d.date}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
         datasets: [{
           label: "Hours",
-          data: ordered.map((s) => s.duration_seconds / 3600),
-          backgroundColor: `rgb(${barColor} / 0.8)`,
-          borderColor: `rgb(${barColor})`,
-          borderWidth: 1
+          data: days.map((d) => d.seconds / 3600),
+          borderColor: `rgb(${lineColor})`,
+          backgroundColor: `rgb(${lineColor} / 0.2)`,
+          fill: true,
+          tension: 0.3
         }]
       },
       options: {
         scales: {
           x: { ticks: { color: textColor }, grid: { color: gridColor } },
-          y: { ticks: { color: textColor }, grid: { color: gridColor } }
+          y: { beginAtZero: true, ticks: { color: textColor }, grid: { color: gridColor } }
         },
         plugins: {
-          legend: { labels: { color: textColor } }
+          legend: { display: false }
         }
       }
     });
@@ -466,24 +470,27 @@
     state.recentHasMore = Boolean(data.has_more);
     state.recentLoadedOnce = true;
     renderRecentTable(state.recentSessions);
-    renderDurationChart(state.recentSessions);
   }
 
   async function loadPageData() {
-    const [statsRes, activityRes] = await Promise.all([
+    const [statsRes, activityRes, trendRes] = await Promise.all([
       fetch(`/api/users/${targetUserId}/stats`),
-      fetch(`/api/users/${targetUserId}/activity-grid?days=140`)
+      fetch(`/api/users/${targetUserId}/activity-grid?days=140`),
+      fetch(`/api/users/${targetUserId}/activity-grid?days=14`)
     ]);
 
     const statsData = await statsRes.json();
     const activityData = await activityRes.json();
+    const trendData = await trendRes.json();
 
     if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
     if (!activityRes.ok) throw new Error(activityData.error || "Could not load activity grid");
+    if (!trendRes.ok) throw new Error(trendData.error || "Could not load daily trend");
 
     renderCategoryChart(statsData.categories || []);
     state.activityDays = activityData.days || [];
     state.activityMaxSeconds = activityData.max_seconds || 0;
+    renderDailyTrend(trendData.days || []);
     await loadRecent({ reset: true });
     paintActivityLegend();
     renderActivityGrid(state.activityDays, state.activityMaxSeconds);
@@ -564,7 +571,7 @@
   loadPageData().catch(() => {
     document.getElementById("activityEmpty").classList.remove("hidden");
     document.getElementById("categoryEmpty").classList.remove("hidden");
-    document.getElementById("durationEmpty").classList.remove("hidden");
+    document.getElementById("dailyTrendEmpty").classList.remove("hidden");
     document.getElementById("recentEmpty").classList.remove("hidden");
   });
 </script>
