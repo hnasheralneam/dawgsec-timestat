@@ -133,8 +133,8 @@ def run_daily_database_backup(db_path: str, base_dir: str) -> None:
     os.makedirs(backup_dir, mode=0o700, exist_ok=True)
     os.chmod(backup_dir, 0o700)
 
-    now_utc = datetime.now(timezone.utc)
-    today_prefix = now_utc.strftime("%Y%m%d")
+    now_local = datetime.now().astimezone()
+    today_prefix = now_local.strftime("%Y%m%d")
     has_today_backup = False
     for entry in os.scandir(backup_dir):
         if not entry.is_file(follow_symlinks=False):
@@ -144,12 +144,12 @@ def run_daily_database_backup(db_path: str, base_dir: str) -> None:
             break
 
     if not has_today_backup:
-        backup_filename = f"timestat-{now_utc.strftime('%Y%m%d-%H%M%S')}.db"
+        backup_filename = f"timestat-{now_local.strftime('%Y%m%d-%H%M%S')}.db"
         backup_path = os.path.join(backup_dir, backup_filename)
         shutil.copy2(db_path, backup_path)
         os.chmod(backup_path, 0o600)
 
-    cutoff = now_utc - timedelta(days=config.BACKUP_RETENTION_DAYS)
+    cutoff = now_local - timedelta(days=config.BACKUP_RETENTION_DAYS)
     cutoff_ts = cutoff.timestamp()
     for entry in os.scandir(backup_dir):
         if not entry.is_file(follow_symlinks=False):
@@ -263,7 +263,7 @@ def prune_auth_attempts(cutoff_ts: int) -> None:
 
 
 def run_daily_maintenance() -> None:
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().astimezone().date().isoformat()
     if current_app.config.get("_MAINTENANCE_LAST_RUN_DAY") == today:
         return
     current_app.config["_MAINTENANCE_LAST_RUN_DAY"] = today

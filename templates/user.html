@@ -198,7 +198,7 @@
     }
     empty.classList.add("hidden");
 
-    const firstWeekday = new Date(`${days[0].date}T00:00:00Z`).getUTCDay();
+    const firstWeekday = new Date(`${days[0].date}T00:00:00`).getDay();
     const paddedDays = [
       ...Array(firstWeekday).fill(null),
       ...days
@@ -215,8 +215,8 @@
     monthRow.className = "flex gap-1 mb-1 ml-8 text-[10px] text-gb-fg/70";
     for (const col of columns) {
       const firstNonNull = col.find((item) => item);
-      const firstDate = firstNonNull ? new Date(`${firstNonNull.date}T00:00:00Z`) : null;
-      const label = firstDate && firstDate.getUTCDate() <= 7
+      const firstDate = firstNonNull ? new Date(`${firstNonNull.date}T00:00:00`) : null;
+      const label = firstDate && firstDate.getDate() <= 7
         ? firstDate.toLocaleDateString(undefined, { month: "short" })
         : "";
       const slot = document.createElement("div");
@@ -248,7 +248,7 @@
         const cell = document.createElement("div");
         cell.className = "w-4 h-4 rounded-sm";
         if (day) {
-          const localDate = new Date(`${day.date}T00:00:00Z`).toLocaleDateString();
+          const localDate = new Date(`${day.date}T00:00:00`).toLocaleDateString();
           const hours = (day.seconds / 3600).toFixed(2);
           cell.style.backgroundColor = activityColor(day.seconds, maxSeconds);
           cell.setAttribute("data-tooltip", `${localDate} — ${hours}h`);

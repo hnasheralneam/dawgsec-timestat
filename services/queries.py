@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from flask import session
 
@@ -119,7 +119,7 @@ def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
     if days < 1:
         return []
     days = min(days, 366)
-    today_iso = datetime.fromtimestamp(current_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    today_iso = datetime.fromtimestamp(current_ts).astimezone().strftime("%Y-%m-%d")
     rows = conn.execute(
         """
         WITH RECURSIVE dates(day) AS (
@@ -129,14 +129,14 @@ def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
         ),
         totals AS (
             SELECT
-                date(end_ts, 'unixepoch') AS day,
+                date(end_ts, 'unixepoch', 'localtime') AS day,
                 SUM(MAX(0, end_ts - start_ts - paused_seconds)) AS seconds
             FROM sessions
             WHERE user_id = ?
               AND status = 'completed'
               AND end_ts IS NOT NULL
-              AND date(end_ts, 'unixepoch') >= date(?, ?)
-            GROUP BY date(end_ts, 'unixepoch')
+              AND date(end_ts, 'unixepoch', 'localtime') >= date(?, ?)
+            GROUP BY date(end_ts, 'unixepoch', 'localtime')
         )
         SELECT dates.day, COALESCE(totals.seconds, 0) AS seconds
         FROM dates
