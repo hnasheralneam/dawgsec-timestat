@@ -65,10 +65,30 @@
    */
   function renderOrUpdateChart(chart, ctx, config) {
     if (chart) {
+      const oldLabels = chart.data.labels || [];
+      const newLabels = config.data.labels || [];
+      const isSameLabels = oldLabels.length === newLabels.length &&
+        oldLabels.every((l, i) => l === newLabels[i]);
+      
+      const oldDsets = chart.data.datasets || [];
+      const newDsets = config.data.datasets || [];
+      const isSameData = oldDsets.length === newDsets.length &&
+        oldDsets.every((d, i) => {
+          if (!newDsets[i]) return false;
+          const oldVal = d.data || [];
+          const newVal = newDsets[i].data || [];
+          return oldVal.length === newVal.length &&
+            oldVal.every((v, idx) => v === newVal[idx]);
+        });
+      
+      if (isSameLabels && isSameData) {
+        return chart;
+      }
+      
       chart.data = config.data;
       if (config.options) chart.options = config.options;
       if (config.type) chart.config.type = config.type;
-      chart.update();
+      chart.update('none');
       return chart;
     }
     return new Chart(ctx, config);

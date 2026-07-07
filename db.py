@@ -32,97 +32,7 @@ def close_db(_exception=None) -> None:
         db.close()
 
 
-def migrate_sessions_table_to_category_name(db: sqlite3.Connection) -> bool:
-    table_exists = db.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'"
-    ).fetchone()
-    if not table_exists:
-        return False
 
-    session_columns = {row["name"] for row in db.execute("PRAGMA table_info(sessions)")}
-    needs_migration = "category_name" not in session_columns or "category_id" in session_columns
-    if not needs_migration:
-        return False
-
-    foreign_keys_enabled = int(db.execute("PRAGMA foreign_keys").fetchone()[0])
-    db.execute("PRAGMA foreign_keys = OFF")
-    try:
-        db.execute("BEGIN")
-        db.execute(
-            """
-            CREATE TABLE sessions_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                category_name TEXT NOT NULL,
-                note TEXT,
-                start_ts INTEGER NOT NULL,
-                end_ts INTEGER,
-                paused_seconds INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL CHECK(status IN ('running', 'paused', 'completed')),
-                pause_started_ts INTEGER,
-                created_ts INTEGER NOT NULL,
-                FOREIGN KEY(user_id) REFERENCES users(id)
-            )
-            """
-        )
-
-        if "category_id" in session_columns and "category_name" in session_columns:
-            category_expr = "COALESCE(NULLIF(TRIM(s.category_name), ''), c.name, 'Other')"
-            join_clause = "LEFT JOIN categories c ON c.id = s.category_id"
-        elif "category_id" in session_columns:
-            category_expr = "COALESCE(c.name, 'Other')"
-            join_clause = "LEFT JOIN categories c ON c.id = s.category_id"
-        else:
-            category_expr = "COALESCE(NULLIF(TRIM(s.category_name), ''), 'Other')"
-            join_clause = ""
-
-        db.execute(
-            f"""
-            INSERT INTO sessions_new(
-                id,
-                user_id,
-                category_name,
-                note,
-                start_ts,
-                end_ts,
-                paused_seconds,
-                status,
-                pause_started_ts,
-                created_ts
-            )
-            SELECT
-                s.id,
-                s.user_id,
-                {category_expr},
-                s.note,
-                s.start_ts,
-                s.end_ts,
-                s.paused_seconds,
-                s.status,
-                s.pause_started_ts,
-                s.created_ts
-            FROM sessions s
-            {join_clause}
-            """
-        )
-
-        db.execute("DROP TABLE sessions")
-        db.execute("ALTER TABLE sessions_new RENAME TO sessions")
-        db.execute(
-            """
-            UPDATE sqlite_sequence
-            SET seq = COALESCE((SELECT MAX(id) FROM sessions), 0)
-            WHERE name = 'sessions'
-            """
-        )
-        db.execute("COMMIT")
-    except Exception:
-        db.execute("ROLLBACK")
-        raise
-    finally:
-        db.execute(f"PRAGMA foreign_keys = {foreign_keys_enabled}")
-
-    return True
 
 
 def run_daily_database_backup(db_path: str, base_dir: str) -> None:
@@ -146,8 +56,18 @@ def run_daily_database_backup(db_path: str, base_dir: str) -> None:
     if not has_today_backup:
         backup_filename = f"timestat-{now_local.strftime('%Y%m%d-%H%M%S')}.db"
         backup_path = os.path.join(backup_dir, backup_filename)
-        shutil.copy2(db_path, backup_path)
-        os.chmod(backup_path, 0o600)
+        tmp_backup_path = backup_path + ".tmp"
+        
+        src_conn = sqlite3.connect(db_path)
+        dst_conn = sqlite3.connect(tmp_backup_path)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            src_conn.close()
+            dst_conn.close()
+            
+        os.chmod(tmp_backup_path, 0o600)
+        os.replace(tmp_backup_path, backup_path)
 
     cutoff = now_local - timedelta(days=config.BACKUP_RETENTION_DAYS)
     cutoff_ts = cutoff.timestamp()
@@ -221,8 +141,6 @@ def init_db() -> None:
         )
     if "theme_custom_color" not in user_columns:
         db.execute("ALTER TABLE users ADD COLUMN theme_custom_color TEXT")
-
-    migrate_sessions_table_to_category_name(db)
 
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_user_status_id ON sessions(user_id, status, id)"

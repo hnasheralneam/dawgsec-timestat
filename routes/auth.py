@@ -20,6 +20,8 @@ def register_routes(app):
     @app.route("/register", methods=["GET", "POST"])
     def register():
         if request.method == "GET":
+            if "user_id" in session:
+                return redirect(url_for("dashboard"))
             return render_template("register.html")
 
         username, username_error = parsing.parse_username(request.form.get("username"))
@@ -60,6 +62,8 @@ def register_routes(app):
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "GET":
+            if "user_id" in session:
+                return redirect(url_for("dashboard"))
             return render_template("login.html")
 
         username, username_error = parsing.parse_username(request.form.get("username"))

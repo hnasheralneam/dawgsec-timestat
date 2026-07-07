@@ -128,8 +128,8 @@ class CsrfAndRateLimitTests(TimeStatTestCase):
         self.assertEqual(response.get_json()["error"], "Invalid CSRF token")
 
     def test_login_is_rate_limited_after_max_failed_attempts(self):
-        self._register_and_sign_in("ratelimituser")
-        self.client.post("/logout")
+        csrf = self._register_and_sign_in("ratelimituser")
+        self.client.post("/logout", data={"csrf_token": csrf})
 
         login_page = self.client.get("/login")
         csrf = extract_csrf(login_page.data)

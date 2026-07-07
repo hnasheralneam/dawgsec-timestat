@@ -25,6 +25,7 @@ LOGIN_MAX_ATTEMPTS = 8
 ADMIN_LOGIN_MAX_ATTEMPTS = 5
 DEFAULT_RECENT_LIMIT = 10
 MAX_RECENT_LIMIT = 200
+MAX_SESSION_RUNNING_HOURS = 8
 
 # Number of trusted reverse proxy hops in front of this app. When 0 (default),
 # the app is assumed to receive connections directly and X-Forwarded-For is

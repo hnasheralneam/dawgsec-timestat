@@ -12,12 +12,27 @@ def main() -> None:
 
     new_code = generate_login_code()
 
+    import os
+    import config
+    config.load_env_file(os.path.join(config.BASE_DIR, ".env"))
+    config.load_env_file("/etc/timestat/timestat.env")
+    store_plaintext = os.environ.get("STORE_LOGIN_CODE_PLAINTEXT", "").strip().lower() in {"1", "true", "yes"}
+
     conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     try:
-        cur = conn.execute(
-            "UPDATE users SET code_hash = ? WHERE username = ?",
-            (generate_password_hash(new_code), username),
-        )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        if "login_code" in columns:
+            stored_code = new_code if store_plaintext else None
+            cur = conn.execute(
+                "UPDATE users SET code_hash = ?, login_code = ? WHERE username = ?",
+                (generate_password_hash(new_code), stored_code, username),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE users SET code_hash = ? WHERE username = ?",
+                (generate_password_hash(new_code), username),
+            )
         conn.commit()
     finally:
         conn.close()

@@ -15,6 +15,7 @@ def register_routes(app):
     def api_status():
         user_id = int(session["user_id"])
         active = queries.get_active_session(user_id)
+        auto_paused_alert = bool(session.pop("auto_paused_alert", None))
         current_ts = db.now_ts()
         collab_since_raw = request.args.get("collab_since")
         collab_since_ts = current_ts
@@ -43,6 +44,7 @@ def register_routes(app):
                     "team_presence": team_presence,
                     "new_starts": new_starts,
                     "notify_on_collab_starts": notify_on_collab_starts,
+                    "auto_paused_alert": auto_paused_alert,
                 }
             )
 
@@ -52,6 +54,7 @@ def register_routes(app):
                 "team_presence": team_presence,
                 "new_starts": new_starts,
                 "notify_on_collab_starts": notify_on_collab_starts,
+                "auto_paused_alert": auto_paused_alert,
                 "current_session": {
                     "id": active["id"],
                     "category_name": active["category_name"],

@@ -47,3 +47,7 @@ def register_routes(app):
             categories=categories,
             active_page="user_profile",
         )
+
+    @app.route("/service-worker.js")
+    def service_worker():
+        return app.send_static_file("js/service-worker.js")

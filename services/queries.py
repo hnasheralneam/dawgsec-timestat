@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import session
 
@@ -18,7 +18,7 @@ def get_current_user():
 
 def get_active_session(user_id: int):
     conn = db.get_db()
-    return conn.execute(
+    active = conn.execute(
         """
         SELECT *
         FROM sessions
@@ -28,6 +28,28 @@ def get_active_session(user_id: int):
         """,
         (user_id,),
     ).fetchone()
+
+    if active and active["status"] == "running":
+        current_ts = db.now_ts()
+        elapsed = current_ts - active["start_ts"] - active["paused_seconds"]
+        import config
+        limit_seconds = config.MAX_SESSION_RUNNING_HOURS * 3600
+        if elapsed > limit_seconds:
+            pause_ts = active["start_ts"] + active["paused_seconds"] + limit_seconds
+            conn.execute(
+                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ?",
+                (pause_ts, active["id"]),
+            )
+            conn.commit()
+            try:
+                session["auto_paused_alert"] = True
+            except RuntimeError:
+                pass
+            active = conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (active["id"],)
+            ).fetchone()
+
+    return active
 
 
 def get_categories():
@@ -120,6 +142,12 @@ def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
         return []
     days = min(days, 366)
     today_iso = datetime.fromtimestamp(current_ts).astimezone().strftime("%Y-%m-%d")
+    
+    today_local = datetime.fromtimestamp(current_ts).astimezone()
+    start_of_today = today_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff_date = start_of_today - timedelta(days=days - 1)
+    cutoff_ts = int(cutoff_date.timestamp())
+
     rows = conn.execute(
         """
         WITH RECURSIVE dates(day) AS (
@@ -134,8 +162,7 @@ def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
             FROM sessions
             WHERE user_id = ?
               AND status = 'completed'
-              AND end_ts IS NOT NULL
-              AND date(end_ts, 'unixepoch', 'localtime') >= date(?, ?)
+              AND end_ts >= ?
             GROUP BY date(end_ts, 'unixepoch', 'localtime')
         )
         SELECT dates.day, COALESCE(totals.seconds, 0) AS seconds
@@ -143,7 +170,7 @@ def user_activity_grid(user_id: int, current_ts: int, days: int = 140):
         LEFT JOIN totals ON totals.day = dates.day
         ORDER BY dates.day ASC
         """,
-        (today_iso, f"-{days - 1} days", today_iso, user_id, today_iso, f"-{days - 1} days"),
+        (today_iso, f"-{days - 1} days", today_iso, user_id, cutoff_ts),
     ).fetchall()
     return [{"date": row["day"], "seconds": int(row["seconds"] or 0)} for row in rows]
 

@@ -368,6 +368,11 @@
     state.collabSinceTs = data.server_ts || state.collabSinceTs;
     renderPresence(data.team_presence || []);
 
+    if (data.auto_paused_alert) {
+      showCollabNotification("System: Your session was automatically paused because it exceeded the continuous 8-hour limit.");
+      setMessage("Your session was automatically paused because it exceeded the 8-hour limit.", true);
+    }
+
     if (!state.collabInitialized) {
       for (const event of data.new_starts || []) {
         state.shownStartNotifications.add(event.session_id);
