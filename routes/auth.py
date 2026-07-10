@@ -54,6 +54,7 @@ def register_routes(app):
 
         session.clear()
         session["user_id"] = int(cursor.lastrowid)
+        session.permanent = True
         security.rotate_csrf_token()
         return render_template(
             "register_success.html", username=username, six_digit_code=six_digit_code
@@ -89,6 +90,7 @@ def register_routes(app):
         security.auth_clear_failures("user-login", rate_key)
         session.clear()
         session["user_id"] = user["id"]
+        session.permanent = True
         security.rotate_csrf_token()
         return redirect(url_for("dashboard"))
 

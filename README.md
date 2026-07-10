@@ -57,7 +57,7 @@ All supported env values are in `deploy/timestat.env.example`.
 | `SECRET_KEY` | Yes | Flask session signing key |
 | `ADMIN_USERNAME` | No | Enables admin login when paired with `ADMIN_PASSWORD` |
 | `ADMIN_PASSWORD` | No | Enables admin login when paired with `ADMIN_USERNAME` |
-| `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS |
+| `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS. **Leave unset or `false` for HTTP-only deployments (e.g., local testing, HTTP-accessible LAN) to prevent mobile login issues.** |
 | `FLASK_DEBUG` | No | Set `1` for debug mode when running `python app.py` |
 
 ## Deploy (systemd + Gunicorn)
@@ -88,3 +88,17 @@ Service binds `127.0.0.1:8000` (put behind nginx/Caddy).
 - Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (UTC)
 - Backups older than 14 days are auto-removed
 - Sessions store `category_name` directly (stable historical labels)
+
+## Troubleshooting
+
+### Mobile users getting logged out repeatedly
+
+If mobile users (especially on Android) experience frequent logouts or can't stay logged in:
+
+1. **Check if you're using HTTP (not HTTPS):** If your app is accessed via `http://...` (no TLS/SSL), ensure `SESSION_COOKIE_SECURE` is unset or set to `false`. Modern browsers reject secure cookies on HTTP connections.
+
+2. **Verify the environment variable:** Set `SESSION_COOKIE_SECURE=false` in your `.env` file or `/etc/timestat/timestat.env` for production.
+
+3. **HTTPS deployments only:** Only set `SESSION_COOKIE_SECURE=true` when your app is served exclusively over HTTPS with a valid TLS certificate.
+
+4. **Clear browser cookies:** After changing this setting, affected users should clear their browser cookies and log in again.

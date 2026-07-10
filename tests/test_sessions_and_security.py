@@ -284,3 +284,39 @@ class RecentSessionsQueryTests(TimeStatTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SessionCookieSecureTests(unittest.TestCase):
+    def test_session_cookie_secure_defaults_to_false(self):
+        """SESSION_COOKIE_SECURE should default to False for HTTP-only deployments"""
+        import os
+        # Ensure no SESSION_COOKIE_SECURE env var is set
+        os.environ.pop("SESSION_COOKIE_SECURE", None)
+        os.environ["SECRET_KEY"] = "test-key"
+        # Import fresh module to test default behavior
+        import importlib
+        import app
+        importlib.reload(app)
+        self.assertFalse(app.app.config["SESSION_COOKIE_SECURE"],
+                        "SESSION_COOKIE_SECURE should default to False when not set")
+
+    def test_session_cookie_secure_can_be_enabled_via_env(self):
+        """SESSION_COOKIE_SECURE can be explicitly set via environment variable"""
+        import os
+        os.environ["SESSION_COOKIE_SECURE"] = "true"
+        os.environ["SECRET_KEY"] = "test-key"
+        import importlib
+        import app
+        importlib.reload(app)
+        self.assertTrue(app.app.config["SESSION_COOKIE_SECURE"],
+                       "SESSION_COOKIE_SECURE should be True when set to 'true'")
+
+    def test_session_cookie_secure_can_be_disabled_via_env(self):
+        """SESSION_COOKIE_SECURE can be explicitly disabled via environment variable"""
+        import os
+        os.environ["SESSION_COOKIE_SECURE"] = "false"
+        os.environ["SECRET_KEY"] = "test-key"
+        import importlib
+        import app
+        importlib.reload(app)
+        self.assertFalse(app.app.config["SESSION_COOKIE_SECURE"],
+                        "SESSION_COOKIE_SECURE should be False when set to 'false'")

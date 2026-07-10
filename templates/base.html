@@ -510,13 +510,29 @@
           const ok = document.getElementById("appConfirmOk");
           const cancel = document.getElementById("appConfirmCancel");
           ok.focus();
+          function onKeydown(e) {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              cleanup(false);
+            } else if (e.key === "Tab") {
+              // Trap focus within the two modal buttons.
+              const focusables = [cancel, ok];
+              const idx = focusables.indexOf(document.activeElement);
+              const dir = e.shiftKey ? -1 : 1;
+              const next = focusables[(idx + dir + focusables.length) % focusables.length];
+              e.preventDefault();
+              (idx === -1 ? focusables[0] : next).focus();
+            }
+          }
           function cleanup(result) {
             modal.classList.add("hidden");
             modal.classList.remove("flex");
             ok.onclick = null;
             cancel.onclick = null;
+            modal.removeEventListener("keydown", onKeydown);
             resolve(result);
           }
+          modal.addEventListener("keydown", onKeydown);
           ok.onclick = () => cleanup(true);
           cancel.onclick = () => cleanup(false);
         });

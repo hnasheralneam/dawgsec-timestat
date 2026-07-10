@@ -44,12 +44,20 @@ body {
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
 
+.flash-error {
+  outline-color: rgb(var(--gb-red-rgb)) !important;
+  border-color: rgb(var(--gb-red-rgb)) !important;
+}
+
 
 .neu-inset {
   background: rgb(var(--gb-bg1-rgb));
   border: 1px solid rgb(var(--gb-bg2-rgb));
   box-shadow: inset 6px 6px 12px rgb(var(--gb-shadow-rgb)), inset -6px -6px 12px rgb(var(--gb-highlight-rgb));
   border-radius: 0.9rem;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.3s ease, border-color 0.3s ease;
 }
 
 .neu-input {

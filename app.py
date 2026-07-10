@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import sys
+from datetime import timedelta
 
 from flask import Flask, flash, jsonify, redirect, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -55,9 +56,15 @@ def create_app() -> Flask:
     )
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["SESSION_COOKIE_SECURE"] = (
-        os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower() in {"1", "true", "yes"}
-    )
+    # Allow SESSION_COOKIE_SECURE to be overridden for HTTP-only local/dev deployments
+    # Default to True for security, but allow env override for HTTP scenarios
+    session_cookie_secure = os.environ.get("SESSION_COOKIE_SECURE", "").strip()
+    if session_cookie_secure:
+        app.config["SESSION_COOKIE_SECURE"] = session_cookie_secure not in {"0", "false", "no", "False"}
+    else:
+        # Auto-detect: default to False for HTTP-only dev deployments
+        app.config["SESSION_COOKIE_SECURE"] = False
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=31)
 
     trusted_proxy_count_raw = os.environ.get("TRUSTED_PROXY_COUNT", "").strip()
     try:

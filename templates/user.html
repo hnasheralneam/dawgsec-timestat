@@ -78,13 +78,14 @@
       </h3>
       <input type="hidden" id="editSessionId">
       <div class="grid sm:grid-cols-2 gap-3 mt-3">
-        <label class="block">
+        <label class="block relative">
           <span class="text-sm text-gb-fg/85">Category</span>
-          <select id="editCategoryName" class="mt-1 neu-input">
+          <input type="text" id="editCategoryName" class="mt-1 neu-input" placeholder="Search or select category" autocomplete="off">
+          <ul id="editCategoryDropdown" class="hidden absolute z-50 w-full mt-1 neu-surface border border-gb-bg2 rounded-lg max-h-80 overflow-auto shadow-lg">
             {% for category in categories %}
-              <option value="{{ category.name }}">{{ category.name }}</option>
+              <li class="edit-category-option px-3 py-2 cursor-pointer hover:bg-gb-bg2 text-gb-fg transition-colors" data-value="{{ category.name }}">{{ category.name }}</li>
             {% endfor %}
-          </select>
+          </ul>
         </label>
         <label class="block">
           <span class="text-sm text-gb-fg/85">Note</span>
@@ -301,6 +302,8 @@
     if (!canDeleteSessions) return;
     document.getElementById("editSessionPanel").classList.add("hidden");
     document.getElementById("editSessionId").value = "";
+    document.getElementById("editCategoryName").value = "";
+    selectedEditCategory = "";
     document.getElementById("editNote").value = "";
   }
 
@@ -309,7 +312,9 @@
     const selected = state.recentSessions.find((s) => s.id === sessionId);
     if (!selected) return;
     document.getElementById("editSessionId").value = String(selected.id);
-    document.getElementById("editCategoryName").value = String(selected.category_name || "");
+    const categoryName = String(selected.category_name || "");
+    document.getElementById("editCategoryName").value = categoryName;
+    selectedEditCategory = categoryName;
     document.getElementById("editNote").value = selected.note || "";
     document.getElementById("editSessionPanel").classList.remove("hidden");
     document.getElementById("editNote").focus();
@@ -503,6 +508,10 @@
       try {
         await loadRecent({ reset: true });
       } catch (err) {
+        if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+          window.location.href = "/login";
+          return;
+        }
         setMessage(err.message || "Could not load recent sessions", true);
       }
     }, 300);
@@ -512,6 +521,10 @@
     try {
       await loadRecent({ reset: true });
     } catch (err) {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
       setMessage(err.message || "Could not load recent sessions", true);
     }
   });
@@ -522,6 +535,10 @@
     try {
       await loadRecent({ reset: true });
     } catch (err) {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
       setMessage(err.message || "Could not load recent sessions", true);
     }
   });
@@ -531,6 +548,10 @@
     try {
       await loadRecent({ reset: false });
     } catch (err) {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
       setMessage(err.message || "Could not load recent sessions", true);
     }
   });
@@ -555,7 +576,71 @@
         setMessage("Session updated.");
         await loadPageData();
       } catch (err) {
+        if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+          window.location.href = "/login";
+          return;
+        }
         setMessage(err.message || "Could not update session", true);
+      }
+    });
+  }
+
+  // Edit category dropdown search functionality
+  const editCategoryInput = document.getElementById("editCategoryName");
+  const editCategoryDropdown = document.getElementById("editCategoryDropdown");
+  const editCategoryOptions = document.querySelectorAll(".edit-category-option");
+  let selectedEditCategory = "";
+
+  function filterEditCategories(query = "") {
+    const lowerQuery = query.toLowerCase();
+    let hasVisible = false;
+    editCategoryOptions.forEach((option) => {
+      const value = option.getAttribute("data-value").toLowerCase();
+      const matches = value.includes(lowerQuery);
+      option.classList.toggle("hidden", !matches);
+      if (matches) hasVisible = true;
+    });
+    editCategoryDropdown.classList.toggle("hidden", !hasVisible || query === selectedEditCategory);
+  }
+
+  if (editCategoryInput && editCategoryDropdown) {
+    editCategoryInput.addEventListener("focus", () => {
+      filterEditCategories(editCategoryInput.value);
+    });
+
+    editCategoryInput.addEventListener("input", () => {
+      filterEditCategories(editCategoryInput.value);
+    });
+
+    editCategoryInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        editCategoryDropdown.classList.add("hidden");
+        editCategoryInput.value = selectedEditCategory;
+      } else if (e.key === "Enter") {
+        editCategoryDropdown.classList.add("hidden");
+        selectedEditCategory = editCategoryInput.value;
+        const firstVisible = Array.from(editCategoryOptions).find(opt => !opt.classList.contains("hidden"));
+        if (firstVisible && firstVisible.getAttribute("data-value").toLowerCase() === editCategoryInput.value.toLowerCase()) {
+          editCategoryInput.value = firstVisible.getAttribute("data-value");
+          selectedEditCategory = editCategoryInput.value;
+        }
+      }
+    });
+
+    editCategoryOptions.forEach((option) => {
+      option.addEventListener("click", () => {
+        editCategoryInput.value = option.getAttribute("data-value");
+        selectedEditCategory = editCategoryInput.value;
+        editCategoryDropdown.classList.add("hidden");
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!editCategoryInput.contains(e.target) && !editCategoryDropdown.contains(e.target)) {
+        editCategoryDropdown.classList.add("hidden");
+        if (!editCategoryInput.value) {
+          editCategoryInput.value = selectedEditCategory;
+        }
       }
     });
   }
@@ -568,7 +653,11 @@
   });
 
   paintActivityLegend();
-  loadPageData().catch(() => {
+  loadPageData().catch(async (err) => {
+    if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+      window.location.href = "/login";
+      return;
+    }
     document.getElementById("activityEmpty").classList.remove("hidden");
     document.getElementById("categoryEmpty").classList.remove("hidden");
     document.getElementById("dailyTrendEmpty").classList.remove("hidden");

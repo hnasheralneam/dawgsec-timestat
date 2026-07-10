@@ -12,13 +12,19 @@
       Session Tracker
     </h2>
     <div class="grid md:grid-cols-3 gap-3 items-end">
-      <label class="block md:col-span-1">
+      <label class="block md:col-span-1 relative">
         <span class="text-sm text-gb-fg/85">Activity</span>
-        <select id="categoryId" class="mt-1 neu-input" data-tooltip="Select the activity that most matches your task">
-          {% for category in categories %}
-            <option value="{{ category.name }}">{{ category.name }}</option>
-          {% endfor %}
-        </select>
+        <div class="relative mt-1">
+          <input type="text" id="categoryId" class="neu-input pr-9" placeholder="Search or select activity" autocomplete="off" data-tooltip="Select the activity that most matches your task">
+          <button type="button" id="clearActivityBtn" class="hidden absolute inset-y-0 right-2 flex items-center text-gb-fg/50 hover:text-gb-red transition-colors" aria-label="Clear activity" data-tooltip="Clear the selected activity">
+            <span class="material-symbols-rounded text-lg" aria-hidden="true">close</span>
+          </button>
+          <ul id="activityDropdown" class="hidden absolute z-50 w-full mt-1 neu-surface border border-gb-bg2 rounded-lg max-h-80 overflow-auto shadow-lg">
+            {% for category in categories %}
+              <li class="activity-option px-3 py-2 cursor-pointer hover:bg-gb-bg2 text-gb-fg transition-colors" data-value="{{ category.name }}">{{ category.name }}</li>
+            {% endfor %}
+          </ul>
+        </div>
       </label>
       <label class="block md:col-span-2">
         <span class="text-sm text-gb-fg/85">Note</span>
@@ -26,7 +32,7 @@
       </label>
     </div>
 
-    <div class="mt-4 neu-inset p-4 text-center">
+    <div id="sessionTracker" class="mt-4 neu-inset p-4 text-center">
       <div id="actionMessage" class="text-sm text-gb-green mb-1"></div>
       <div id="sessionLabel" class="mt-1 text-gb-fg">No active session</div>
       <div id="timerDisplay" class="mt-2 text-4xl font-mono tracking-widest text-gb-green">00:00:00</div>
@@ -242,6 +248,13 @@
     el.textContent = text || "";
     el.classList.toggle("text-gb-red", isError);
     el.classList.toggle("text-gb-green", !isError);
+  }
+
+  function flashError() {
+    const el = document.getElementById("sessionTracker");
+    if (!el) return;
+    el.classList.add("flash-error");
+    setTimeout(() => el.classList.remove("flash-error"), 900);
   }
 
   function showCollabNotification(text) {
@@ -778,10 +791,100 @@
     }
   });
 
+  // Activity dropdown search functionality
+  const categoryInput = document.getElementById("categoryId");
+  const activityDropdown = document.getElementById("activityDropdown");
+  const activityOptions = document.querySelectorAll(".activity-option");
+  const clearActivityBtn = document.getElementById("clearActivityBtn");
+  let selectedCategory = "";
+
+  function updateClearBtn() {
+    clearActivityBtn.classList.toggle("hidden", !categoryInput.value);
+  }
+
+  function filterCategories(query = "") {
+    const lowerQuery = query.toLowerCase();
+    let hasVisible = false;
+    activityOptions.forEach((option) => {
+      const value = option.getAttribute("data-value").toLowerCase();
+      const matches = value.includes(lowerQuery);
+      option.classList.toggle("hidden", !matches);
+      if (matches) hasVisible = true;
+    });
+    activityDropdown.classList.toggle("hidden", !hasVisible || (query !== "" && query === selectedCategory));
+    updateClearBtn();
+  }
+
+  clearActivityBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    categoryInput.value = "";
+    selectedCategory = "";
+    categoryInput.focus();
+    filterCategories("");
+  });
+
+  categoryInput.addEventListener("focus", () => {
+    filterCategories(categoryInput.value);
+  });
+
+  categoryInput.addEventListener("input", () => {
+    filterCategories(categoryInput.value);
+  });
+
+  categoryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      activityDropdown.classList.add("hidden");
+      categoryInput.value = selectedCategory;
+    } else if (e.key === "Enter") {
+      activityDropdown.classList.add("hidden");
+      selectedCategory = categoryInput.value;
+      const firstVisible = Array.from(activityOptions).find(opt => !opt.classList.contains("hidden"));
+      if (firstVisible && firstVisible.getAttribute("data-value").toLowerCase() === categoryInput.value.toLowerCase()) {
+        categoryInput.value = firstVisible.getAttribute("data-value");
+        selectedCategory = categoryInput.value;
+      }
+    }
+    updateClearBtn();
+  });
+
+  activityOptions.forEach((option) => {
+    option.addEventListener("click", () => {
+      categoryInput.value = option.getAttribute("data-value");
+      selectedCategory = categoryInput.value;
+      activityDropdown.classList.add("hidden");
+      updateClearBtn();
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!categoryInput.contains(e.target) && !activityDropdown.contains(e.target)) {
+      activityDropdown.classList.add("hidden");
+      if (!categoryInput.value) {
+        // Restore selected value if empty
+        categoryInput.value = selectedCategory;
+      }
+      updateClearBtn();
+    }
+  });
+
   document.getElementById("startBtn").addEventListener("click", async () => {
+    const value = categoryInput.value.trim();
+    const isKnown = Array.from(activityOptions).some(
+      (opt) => opt.getAttribute("data-value").toLowerCase() === value.toLowerCase()
+    );
+    if (!value) {
+      setMessage("Pick an activity before starting your session.", true);
+      flashError();
+      return;
+    }
+    if (!isKnown) {
+      setMessage(`"${value}" isn't one of your activities — choose one from the list.`, true);
+      flashError();
+      return;
+    }
     try {
       await postJson("/api/session/start", {
-        category_name: document.getElementById("categoryId").value.trim(),
+        category_name: value,
         note: document.getElementById("sessionNote").value.trim()
       });
       setMessage("Session started.");
@@ -850,7 +953,11 @@
 
   refreshAll();
   setInterval(() => {
-    loadStatus().catch(() => {
+    loadStatus().catch(async (err) => {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
       setMessage("Could not refresh status.", true);
     });
   }, 5000);
@@ -860,7 +967,11 @@
       loadStats(),
       loadDailyTrend(),
       loadRecent({ reset: true })
-    ]).catch(() => {
+    ]).catch(async (err) => {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
       setMessage("Could not refresh dashboard data.", true);
     });
   }, 30000);
