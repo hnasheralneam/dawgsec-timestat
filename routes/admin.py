@@ -4,6 +4,7 @@ from flask import flash, jsonify, redirect, render_template, request, session, u
 
 import config
 import db
+from services import analytics
 from services import queries
 from utils import helpers
 from utils import parsing
@@ -258,3 +259,25 @@ def register_routes(app):
             session.pop("user_id", None)
         flash(f"Removed user '{target_user['username']}' and all associated tasks.", "success")
         return redirect(url_for("admin_dashboard"))
+
+    @app.get("/admin/analytics")
+    @security.admin_required
+    def admin_analytics():
+        return render_template("admin_analytics.html", active_page="admin_analytics")
+
+    @app.get("/admin/api/analytics")
+    @security.admin_required
+    def admin_analytics_data():
+        current_ts = db.now_ts()
+        week_ts = current_ts - config.WEEK_SECONDS
+        return jsonify(
+            {
+                "hours_per_day": analytics.team_hours_per_day(current_ts, days=30),
+                "hour_of_day": analytics.team_hour_of_day(current_ts, days=30),
+                "active_users_per_day": analytics.active_users_per_day(current_ts, days=14),
+                "top_users_week": analytics.team_top_users(current_ts, since_ts=week_ts, limit=10),
+                "categories_all_time": analytics.team_category_breakdown(current_ts),
+                "categories_week": analytics.team_category_breakdown(current_ts, since_ts=week_ts),
+                "server_ts": current_ts,
+            }
+        )

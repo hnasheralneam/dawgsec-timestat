@@ -314,6 +314,11 @@
             <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
           </a>
           {% endif %}
+          {% if is_admin and active_page != "admin_analytics" %}
+          <a href="{{ url_for('admin_analytics') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" aria-label="Team analytics" data-tooltip="Team analytics">
+            <span class="material-symbols-rounded" aria-hidden="true">analytics</span>
+          </a>
+          {% endif %}
           <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
             <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
           </button>
@@ -860,6 +865,36 @@
         navigator.serviceWorker.register('/service-worker.js').catch(() => {});
       });
     }
+    // "Add to Home screen" prompt. Capture beforeinstallprompt (browsers only
+    // fire it once), surface a small floating button, and trigger the native
+    // prompt on click. No-op where unsupported.
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      let deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (document.getElementById('installAppBtn')) return;
+        const btn = document.createElement('button');
+        btn.id = 'installAppBtn';
+        btn.type = 'button';
+        btn.className = 'fixed bottom-4 right-4 z-40 neu-btn bg-gb-blue text-gb-bg0 border-gb-blue/80 px-3 py-2 inline-flex items-center gap-1 text-sm shadow-lg';
+        btn.innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">install_desktop</span> Install app';
+        btn.addEventListener('click', async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          try { await deferredPrompt.userChoice; } catch (_e) {}
+          deferredPrompt = null;
+          btn.remove();
+        });
+        document.body.appendChild(btn);
+      });
+      window.addEventListener('appinstalled', () => {
+        const btn = document.getElementById('installAppBtn');
+        if (btn) btn.remove();
+        deferredPrompt = null;
+      });
+    })();
   </script>
 </body>
 </html>

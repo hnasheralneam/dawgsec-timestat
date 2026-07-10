@@ -261,7 +261,8 @@
     const host = document.getElementById("collabNotifications");
     const toast = document.createElement("div");
     toast.className = "neu-surface px-3 py-2 text-sm text-gb-fg pointer-events-auto flex items-start gap-2";
-    toast.innerHTML = `<span class="flex-1">${text}</span><button class="text-gb-fg/60 hover:text-gb-fg ml-1 leading-none" aria-label="Dismiss notification">&times;</button>`;
+    toast.innerHTML = `<span class="flex-1"></span><button class="text-gb-fg/60 hover:text-gb-fg ml-1 leading-none" aria-label="Dismiss notification">&times;</button>`;
+    toast.querySelector("span.flex-1").textContent = text;
     toast.querySelector("button").addEventListener("click", () => toast.remove());
     host.appendChild(toast);
     setTimeout(() => {
@@ -376,6 +377,10 @@
     const res = await fetch(statusUrl);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load session status");
+    applyStatus(data);
+  }
+
+  function applyStatus(data) {
     state.current = data.current_session;
     state.timerBase = state.current ? state.current.elapsed_seconds : 0;
     state.collabSinceTs = data.server_ts || state.collabSinceTs;
@@ -412,7 +417,11 @@
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
     state.weeklyLeaderboardLoaded = true;
+    applyWeeklyLeaderboard(data);
+  }
 
+  function applyWeeklyLeaderboard(data) {
+    const tbody = document.getElementById("weeklyLeaderboardBody");
     const empty = document.getElementById("weeklyLeaderboardEmpty");
     const range = document.getElementById("weeklyRangeLabel");
     range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
@@ -484,7 +493,10 @@
   async function loadStats() {
     const res = await fetch("/api/stats");
     const data = await res.json();
+    applyStats(data);
+  }
 
+  function applyStats(data) {
     myWeekChart = renderPie(
       myWeekChart,
       "myWeekChart",
@@ -951,20 +963,76 @@
     }
   }, 1000);
 
-  refreshAll();
-  setInterval(() => {
-    loadStatus().catch(async (err) => {
-      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
-        window.location.href = "/login";
-        return;
-      }
-      setMessage("Could not refresh status.", true);
+  // SSE live stream: replaces the 5s /api/status poll and the 30s
+  // leaderboard/stats batch with a single server-pushed connection. Status
+  // arrives ~every 2s; a digest (weekly leaderboard + category charts) ~every
+  // 10s. Daily-trend and recent-sessions stay on a slower poll below. If SSE
+  // is unavailable (older browser) we fall back to the original polling.
+  let stream = null;
+  function initStream() {
+    if (typeof EventSource === "undefined") return false;
+    try {
+      stream = new EventSource("/api/stream");
+    } catch (_err) {
+      return false;
+    }
+    stream.addEventListener("status", (e) => {
+      try { applyStatus(JSON.parse(e.data)); } catch (_err) {}
     });
-  }, 5000);
+    stream.addEventListener("digest", (e) => {
+      try {
+        const digest = JSON.parse(e.data);
+        state.weeklyLeaderboardLoaded = true;
+        applyWeeklyLeaderboard(digest.leaderboard);
+        applyStats(digest.stats);
+      } catch (_err) {}
+    });
+    stream.addEventListener("end", () => {
+      // Server closed for a clean reconnect; EventSource reconnects on its own.
+    });
+    stream.onerror = () => {
+      // EventSource auto-reconnects with backoff. While disconnected, fall back
+      // to a one-off fetch so the UI doesn't freeze; the next open event
+      // resumes push updates.
+      loadStatus().catch(() => {});
+    };
+    return true;
+  }
+
+  // Fallback polling (used when SSE isn't connected).
+  let statusPoll = null;
+  function startStatusPolling() {
+    if (statusPoll) return;
+    statusPoll = setInterval(() => {
+      loadStatus().catch(async (err) => {
+        if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+          window.location.href = "/login";
+          return;
+        }
+        setMessage("Could not refresh status.", true);
+      });
+    }, 5000);
+  }
+  function stopStatusPolling() {
+    if (statusPoll) { clearInterval(statusPoll); statusPoll = null; }
+  }
+
+  refreshAll();
+  if (initStream()) {
+    // SSE is up; pause status polling. It resumes only on stream error.
+    let sseOpen = false;
+    stream.addEventListener("open", () => { sseOpen = true; stopStatusPolling(); });
+    stream.addEventListener("error", () => {
+      if (sseOpen) { sseOpen = false; startStatusPolling(); }
+    });
+  } else {
+    startStatusPolling();
+  }
+  // Daily trend + recent history aren't on the SSE digest yet; poll them on a
+  // slower cadence (lower frequency than before since the live data now flows
+  // over the stream).
   setInterval(() => {
     Promise.all([
-      loadWeeklyLeaderboard(),
-      loadStats(),
       loadDailyTrend(),
       loadRecent({ reset: true })
     ]).catch(async (err) => {
@@ -974,6 +1042,6 @@
       }
       setMessage("Could not refresh dashboard data.", true);
     });
-  }, 30000);
+  }, 60000);
 </script>
 {% endblock %}

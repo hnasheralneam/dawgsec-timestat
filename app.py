@@ -17,6 +17,7 @@ import routes.auth as routes_auth
 import routes.pages as routes_pages
 import routes.session_api as routes_session_api
 import routes.stats_api as routes_stats_api
+import routes.stream_api as routes_stream_api
 import routes.user_api as routes_user_api
 
 logger = logging.getLogger("timestat")
@@ -54,15 +55,27 @@ def create_app() -> Flask:
         os.environ.get("STORE_LOGIN_CODE_PLAINTEXT", "").strip().lower()
         in {"1", "true", "yes"}
     )
+    if app.config["STORE_LOGIN_CODE_PLAINTEXT"]:
+        warning = (
+            "STORE_LOGIN_CODE_PLAINTEXT is enabled: 6-digit login codes are being "
+            "stored verbatim in the users.login_code column. Any read-only DB "
+            "leak (backup file, SQL dump, etc.) will expose directly-usable "
+            "credentials, bypassing the code_hash protection. Disable this in "
+            "production unless the 'reveal my code' UX is required."
+        )
+        logger.warning(warning)
+        print(f"WARNING: {warning}", file=sys.stderr)
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    # Allow SESSION_COOKIE_SECURE to be overridden for HTTP-only local/dev deployments
-    # Default to True for security, but allow env override for HTTP scenarios
+    # SESSION_COOKIE_SECURE intentionally defaults to False so the app keeps
+    # working over plain HTTP (e.g. LAN-only deployments / local testing),
+    # where browsers reject cookies marked Secure. When serving over HTTPS
+    # with a valid certificate, set SESSION_COOKIE_SECURE=true in the env so
+    # the session cookie is only ever transmitted over TLS.
     session_cookie_secure = os.environ.get("SESSION_COOKIE_SECURE", "").strip()
     if session_cookie_secure:
         app.config["SESSION_COOKIE_SECURE"] = session_cookie_secure not in {"0", "false", "no", "False"}
     else:
-        # Auto-detect: default to False for HTTP-only dev deployments
         app.config["SESSION_COOKIE_SECURE"] = False
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=31)
 
@@ -99,8 +112,11 @@ def create_app() -> Flask:
     def enforce_csrf():
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
             return None
-        if "user_id" not in session and not session.get("is_admin"):
-            return None
+        # CSRF is enforced for ALL state-changing requests, including
+        # unauthenticated ones (login, register, admin login). This prevents
+        # login-CSRF / forced-registration attacks. The CSRF token is generated
+        # lazily by csrf_token() (injected into every template and auto-added
+        # to every POST form by base.html), so legitimate pre-auth forms carry it.
         if security.validate_csrf_request():
             return None
 
@@ -110,7 +126,14 @@ def create_app() -> Flask:
         flash("Invalid request token. Refresh and try again.", "error")
         if session.get("is_admin"):
             return redirect(url_for("admin_dashboard"))
-        return redirect(url_for("dashboard"))
+        if "user_id" in session:
+            return redirect(url_for("dashboard"))
+        # Anonymous state-changing request with a bad token: bounce to the
+        # nearest relevant entry point rather than the dashboard (which would
+        # itself redirect to login, obscuring the cause).
+        if request.path.startswith("/admin"):
+            return redirect(url_for("admin_login"))
+        return redirect(url_for("login"))
 
     @app.after_request
     def set_security_headers(response):
@@ -142,6 +165,7 @@ def create_app() -> Flask:
     routes_session_api.register_routes(app)
     routes_user_api.register_routes(app)
     routes_stats_api.register_routes(app)
+    routes_stream_api.register_routes(app)
 
     with app.app_context():
         db.init_db()

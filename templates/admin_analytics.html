@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block header_icon %}analytics{% endblock %}
+{% block header_title %}Team Analytics{% endblock %}
+{% block header_subtitle %}Team-wide trends, busiest hours, and category mix (admin view).{% endblock %}
+{% block header_nav %}
+  <a href="{{ url_for('admin_dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Admin dashboard">
+    <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
+  </a>
+  <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
+    <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+  </button>
+  <form action="{{ url_for('admin_logout') }}" method="post">
+    <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" data-tooltip="Admin sign out">
+      <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+    </button>
+  </form>
+{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <p class="text-sm text-gb-fg/75">All times shown in the server's local timezone. Refreshes on demand.</p>
+  <button id="refreshAnalyticsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-3 py-2 inline-flex items-center gap-1 text-sm" type="button">
+    <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+    Refresh
+  </button>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-4">
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">timeline</span>
+      Team Hours per Day (Last 30)
+    </h2>
+    <canvas id="hoursPerDayChart" height="200" role="img" aria-label="Bar chart of team hours per day"></canvas>
+    <p id="hoursPerDayEmpty" class="empty-state hidden mt-3">No completed sessions in this range.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">groups</span>
+      Active Users per Day (Last 14)
+    </h2>
+    <canvas id="activeUsersChart" height="200" role="img" aria-label="Bar chart of active users per day"></canvas>
+    <p id="activeUsersEmpty" class="empty-state hidden mt-3">No completed sessions in this range.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">schedule</span>
+      Busiest Hours of Day (Last 30)
+    </h2>
+    <canvas id="hourOfDayChart" height="200" role="img" aria-label="Bar chart of busiest hours of the day"></canvas>
+    <p id="hourOfDayEmpty" class="empty-state hidden mt-3">No completed sessions in this range.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">military_tech</span>
+      Top Users This Week
+    </h2>
+    <div class="overflow-auto max-h-72">
+      <table class="w-full text-sm responsive-table">
+        <thead class="text-gb-fg/70">
+          <tr>
+            <th class="text-left py-2">Rank</th>
+            <th class="text-left py-2">User</th>
+            <th class="text-right py-2">Hours</th>
+          </tr>
+        </thead>
+        <tbody id="topUsersBody"></tbody>
+      </table>
+    </div>
+    <p id="topUsersEmpty" class="empty-state hidden mt-3">No tracked time this week yet.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
+      Team Category Mix (All Time)
+    </h2>
+    <canvas id="categoriesAllChart" height="210" role="img" aria-label="Doughnut chart of team category mix all time"></canvas>
+    <p id="categoriesAllEmpty" class="empty-state hidden mt-3">No team data yet.</p>
+  </section>
+
+  <section class="neu-surface p-5">
+    <h2 class="font-semibold text-lg mb-3 text-gb-fg flex items-center gap-2">
+      <span class="material-symbols-rounded" aria-hidden="true">pie_chart</span>
+      Team Category Mix (Last 7 Days)
+    </h2>
+    <canvas id="categoriesWeekChart" height="210" role="img" aria-label="Doughnut chart of team category mix last 7 days"></canvas>
+    <p id="categoriesWeekEmpty" class="empty-state hidden mt-3">No team data this week.</p>
+  </section>
+</div>
+
+<script>
+  // escapeHtml / formatHours / renderOrUpdateChart are provided globally by
+  // static/js/common.js; cssRgb / themeColors by base.html.
+  let hoursPerDayChart = null;
+  let activeUsersChart = null;
+  let hourOfDayChart = null;
+  let categoriesAllChart = null;
+  let categoriesWeekChart = null;
+
+  function textColor() { return window.cssRgb("--gb-fg-rgb"); }
+  function gridColor() { return window.cssRgb("--gb-bg2-rgb"); }
+
+  function barChart(ref, canvasId, labels, values, emptyId) {
+    const empty = document.getElementById(emptyId);
+    if (!labels.length || !values.some((v) => v > 0)) {
+      if (ref) ref.destroy();
+      empty.classList.remove("hidden");
+      return null;
+    }
+    empty.classList.add("hidden");
+    const lineColor = window.cssRgb("--gb-blue-rgb");
+    return window.renderOrUpdateChart(ref, canvasId, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: `rgb(${lineColor} / 0.7)`,
+          borderColor: `rgb(${lineColor})`,
+          borderWidth: 1,
+          borderRadius: 3
+        }]
+      },
+      options: {
+        scales: {
+          x: { ticks: { color: textColor(), maxRotation: 60, autoSkip: true }, grid: { color: gridColor() } },
+          y: { beginAtZero: true, ticks: { color: textColor() }, grid: { color: gridColor() } }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+  }
+
+  function pieChart(ref, canvasId, labels, values, emptyId, title) {
+    const empty = document.getElementById(emptyId);
+    if (!labels.length || !values.some((v) => v > 0)) {
+      if (ref) ref.destroy();
+      empty.classList.remove("hidden");
+      return null;
+    }
+    empty.classList.add("hidden");
+    const ctx = canvasId;
+    return window.renderOrUpdateChart(ref, ctx, {
+      type: "doughnut",
+      data: { labels, datasets: [{ data: values, backgroundColor: window.themeColors() }] },
+      options: { plugins: { legend: { position: "bottom", labels: { color: textColor() } }, title: { display: !!title, text: title || "", color: textColor() } } }
+    });
+  }
+
+  function renderTopUsers(rows) {
+    const tbody = document.getElementById("topUsersBody");
+    const empty = document.getElementById("topUsersEmpty");
+    tbody.innerHTML = "";
+    if (!rows.length) { empty.classList.remove("hidden"); return; }
+    empty.classList.add("hidden");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-gb-bg2";
+      const medal = window.MEDALS[row.rank - 1] || `<span class="text-gb-fg/60">${row.rank}</span>`;
+      tr.innerHTML = `
+        <td class="py-2">${medal}</td>
+        <td class="py-2"><a href="/users/${row.user_id}" class="font-medium text-gb-blue hover:text-gb-purple inline-flex items-center gap-1">
+          <span class="material-symbols-rounded" aria-hidden="true">person</span>${escapeHtml(row.username)}
+        </a></td>
+        <td class="py-2 text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function shortDate(iso) {
+    const d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  async function loadAnalytics() {
+    const res = await fetch("/admin/api/analytics");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not load analytics");
+
+    hoursPerDayChart = barChart(
+      hoursPerDayChart, "hoursPerDayChart",
+      (data.hours_per_day || []).map((d) => shortDate(d.date)),
+      (data.hours_per_day || []).map((d) => +(d.seconds / 3600).toFixed(2)),
+      "hoursPerDayEmpty"
+    );
+
+    activeUsersChart = barChart(
+      activeUsersChart, "activeUsersChart",
+      (data.active_users_per_day || []).map((d) => shortDate(d.date)),
+      (data.active_users_per_day || []).map((d) => d.active_users),
+      "activeUsersEmpty"
+    );
+
+    hourOfDayChart = barChart(
+      hourOfDayChart, "hourOfDayChart",
+      (data.hour_of_day || []).map((d) => `${String(d.hour).padStart(2, "0")}:00`),
+      (data.hour_of_day || []).map((d) => +(d.seconds / 3600).toFixed(2)),
+      "hourOfDayEmpty"
+    );
+
+    renderTopUsers(data.top_users_week || []);
+
+    categoriesAllChart = pieChart(
+      categoriesAllChart, "categoriesAllChart",
+      (data.categories_all_time || []).map((x) => x.name),
+      (data.categories_all_time || []).map((x) => +(x.seconds / 3600).toFixed(2)),
+      "categoriesAllEmpty", ""
+    );
+
+    categoriesWeekChart = pieChart(
+      categoriesWeekChart, "categoriesWeekChart",
+      (data.categories_week || []).map((x) => x.name),
+      (data.categories_week || []).map((x) => +(x.seconds / 3600).toFixed(2)),
+      "categoriesWeekEmpty", ""
+    );
+  }
+
+  loadAnalytics().catch((err) => {
+    const btn = document.getElementById("refreshAnalyticsBtn");
+    btn.classList.add("flash-error");
+    btn.setAttribute("data-tooltip", err.message || "Could not load analytics");
+  });
+  document.getElementById("refreshAnalyticsBtn").addEventListener("click", () => {
+    loadAnalytics().catch(() => {});
+  });
+</script>
+{% endblock %}

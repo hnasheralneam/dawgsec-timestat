@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from flask import session
 
+import config
 import db
 from utils import helpers
 
@@ -32,19 +33,21 @@ def get_active_session(user_id: int):
     if active and active["status"] == "running":
         current_ts = db.now_ts()
         elapsed = current_ts - active["start_ts"] - active["paused_seconds"]
-        import config
         limit_seconds = config.MAX_SESSION_RUNNING_HOURS * 3600
         if elapsed > limit_seconds:
             pause_ts = active["start_ts"] + active["paused_seconds"] + limit_seconds
-            conn.execute(
-                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ?",
+            cur = conn.execute(
+                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ? AND status = 'running'",
                 (pause_ts, active["id"]),
             )
-            conn.commit()
-            try:
-                session["auto_paused_alert"] = True
-            except RuntimeError:
-                pass
+            if cur.rowcount > 0:
+                conn.commit()
+                try:
+                    session["auto_paused_alert"] = True
+                except RuntimeError:
+                    pass
+            else:
+                conn.rollback()
             active = conn.execute(
                 "SELECT * FROM sessions WHERE id = ?", (active["id"],)
             ).fetchone()
@@ -120,8 +123,9 @@ def started_session_events(since_ts: int, exclude_user_id: int):
         WHERE s.user_id != ?
           AND s.created_ts >= ?
         ORDER BY s.created_ts ASC, s.id ASC
+        LIMIT ?
         """,
-        (exclude_user_id, since_ts),
+        (exclude_user_id, since_ts, config.COLLAB_EVENT_LIMIT),
     ).fetchall()
     return [
         {
@@ -225,31 +229,60 @@ def category_rows_for_user(
                 row, current_ts
             )
     else:
+        since = since_ts
         if user_id is None:
-            rows = conn.execute(
+            completed = conn.execute(
                 """
-                SELECT category_name, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                SELECT category_name,
+                    SUM(
+                        CASE
+                            WHEN end_ts <= ? THEN 0
+                            ELSE CAST(
+                                MAX(0, end_ts - start_ts - paused_seconds)
+                                * MIN(1.0, MAX(0.0, (end_ts - MAX(start_ts, ?)) * 1.0) / MAX(1, end_ts - start_ts))
+                            AS INTEGER)
+                        END
+                    ) AS seconds
                 FROM sessions
-                WHERE status IN ('running', 'paused')
-                   OR (status = 'completed' AND end_ts > ?)
+                WHERE status = 'completed' AND end_ts > ?
+                GROUP BY category_name
                 """,
-                (since_ts,),
+                (since, since, since),
+            ).fetchall()
+            active = conn.execute(
+                "SELECT * FROM sessions WHERE status IN ('running', 'paused')"
             ).fetchall()
         else:
-            rows = conn.execute(
+            completed = conn.execute(
                 """
-                SELECT category_name, start_ts, end_ts, paused_seconds, status, pause_started_ts
+                SELECT category_name,
+                    SUM(
+                        CASE
+                            WHEN end_ts <= ? THEN 0
+                            ELSE CAST(
+                                MAX(0, end_ts - start_ts - paused_seconds)
+                                * MIN(1.0, MAX(0.0, (end_ts - MAX(start_ts, ?)) * 1.0) / MAX(1, end_ts - start_ts))
+                            AS INTEGER)
+                        END
+                    ) AS seconds
                 FROM sessions
-                WHERE user_id = ?
-                  AND (
-                    status IN ('running', 'paused')
-                    OR (status = 'completed' AND end_ts > ?)
-                  )
+                WHERE status = 'completed' AND end_ts > ? AND user_id = ?
+                GROUP BY category_name
                 """,
-                (user_id, since_ts),
+                (since, since, since, user_id),
+            ).fetchall()
+            active = conn.execute(
+                """
+                SELECT * FROM sessions
+                WHERE user_id = ? AND status IN ('running', 'paused')
+                """,
+                (user_id,),
             ).fetchall()
 
-        for row in rows:
+        for row in completed:
+            category_name = row["category_name"] or "Other"
+            totals[category_name] = totals.get(category_name, 0) + int(row["seconds"] or 0)
+        for row in active:
             category_name = row["category_name"] or "Other"
             totals[category_name] = totals.get(
                 category_name, 0
@@ -291,16 +324,36 @@ def leaderboard_rows(current_ts: int, since_ts: int | None = None):
                 row, current_ts
             )
     else:
-        rows = conn.execute(
+        since = since_ts
+        completed = conn.execute(
+            """
+            SELECT user_id,
+                SUM(
+                    CASE
+                        WHEN end_ts <= ? THEN 0
+                        ELSE CAST(
+                            MAX(0, end_ts - start_ts - paused_seconds)
+                            * MIN(1.0, MAX(0.0, (end_ts - MAX(start_ts, ?)) * 1.0) / MAX(1, end_ts - start_ts))
+                        AS INTEGER)
+                    END
+                ) AS seconds
+            FROM sessions
+            WHERE status = 'completed' AND end_ts > ?
+            GROUP BY user_id
+            """,
+            (since, since, since),
+        ).fetchall()
+        for row in completed:
+            totals[row["user_id"]] = int(row["seconds"] or 0)
+
+        active = conn.execute(
             """
             SELECT user_id, start_ts, end_ts, paused_seconds, status, pause_started_ts
             FROM sessions
             WHERE status IN ('running', 'paused')
-               OR (status = 'completed' AND end_ts > ?)
-            """,
-            (since_ts,),
+            """
         ).fetchall()
-        for row in rows:
+        for row in active:
             totals[row["user_id"]] = totals.get(row["user_id"], 0) + (
                 helpers.elapsed_seconds_in_window(row, current_ts, since_ts)
             )

@@ -2,10 +2,12 @@ import sqlite3
 
 from flask import jsonify, request, session
 
+import config
 import db
 from utils import helpers
 from utils import parsing
 from services import queries
+from services import payloads
 from auth import security
 
 
@@ -14,8 +16,6 @@ def register_routes(app):
     @security.login_required
     def api_status():
         user_id = int(session["user_id"])
-        active = queries.get_active_session(user_id)
-        auto_paused_alert = bool(session.pop("auto_paused_alert", None))
         current_ts = db.now_ts()
         collab_since_raw = request.args.get("collab_since")
         collab_since_ts = current_ts
@@ -24,46 +24,12 @@ def register_routes(app):
                 collab_since_ts = int(collab_since_raw)
             except ValueError:
                 return jsonify({"error": "collab_since must be an integer"}), 400
-        collab_since_ts = max(0, min(collab_since_ts, current_ts))
-
-        conn = db.get_db()
-        user_settings = conn.execute(
-            "SELECT notify_on_collab_starts FROM users WHERE id = ?",
-            (user_id,),
-        ).fetchone()
-        notify_on_collab_starts = (
-            bool(user_settings["notify_on_collab_starts"]) if user_settings else True
+        collab_since_ts = max(
+            current_ts - config.COLLAB_SINCE_MAX_AGE_SECONDS,
+            min(collab_since_ts, current_ts),
         )
-        team_presence = queries.collaborator_presence_rows(current_ts, exclude_user_id=user_id)
-        new_starts = queries.started_session_events(collab_since_ts, exclude_user_id=user_id)
-        if not active:
-            return jsonify(
-                {
-                    "current_session": None,
-                    "server_ts": current_ts,
-                    "team_presence": team_presence,
-                    "new_starts": new_starts,
-                    "notify_on_collab_starts": notify_on_collab_starts,
-                    "auto_paused_alert": auto_paused_alert,
-                }
-            )
-
         return jsonify(
-            {
-                "server_ts": current_ts,
-                "team_presence": team_presence,
-                "new_starts": new_starts,
-                "notify_on_collab_starts": notify_on_collab_starts,
-                "auto_paused_alert": auto_paused_alert,
-                "current_session": {
-                    "id": active["id"],
-                    "category_name": active["category_name"],
-                    "note": active["note"] or "",
-                    "status": active["status"],
-                    "elapsed_seconds": helpers.elapsed_seconds(active, current_ts),
-                    "start_ts": active["start_ts"],
-                },
-            }
+            payloads.build_status_payload(user_id, current_ts, collab_since_ts, pop_alert=True)
         )
 
     @app.post("/api/session/start")
@@ -116,10 +82,13 @@ def register_routes(app):
         ts = db.now_ts()
         conn = db.get_db()
         try:
-            conn.execute(
-                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ?",
+            cur = conn.execute(
+                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ? AND status = 'running'",
                 (ts, active["id"]),
             )
+            if cur.rowcount == 0:
+                conn.rollback()
+                return jsonify({"error": "session state changed"}), 409
             conn.commit()
         except sqlite3.IntegrityError:
             conn.rollback()
@@ -138,16 +107,19 @@ def register_routes(app):
         extra_paused = ts - int(active["pause_started_ts"] or ts)
         conn = db.get_db()
         try:
-            conn.execute(
+            cur = conn.execute(
                 """
                 UPDATE sessions
                 SET status = 'running',
                     paused_seconds = paused_seconds + ?,
                     pause_started_ts = NULL
-                WHERE id = ?
+                WHERE id = ? AND status = 'paused'
                 """,
                 (extra_paused, active["id"]),
             )
+            if cur.rowcount == 0:
+                conn.rollback()
+                return jsonify({"error": "session state changed"}), 409
             conn.commit()
         except sqlite3.IntegrityError:
             conn.rollback()
@@ -168,17 +140,20 @@ def register_routes(app):
             paused_seconds += ts - int(active["pause_started_ts"])
 
         conn = db.get_db()
-        conn.execute(
+        cur = conn.execute(
             """
             UPDATE sessions
             SET status = 'completed',
                 end_ts = ?,
                 paused_seconds = ?,
                 pause_started_ts = NULL
-            WHERE id = ?
+            WHERE id = ? AND status IN ('running', 'paused')
             """,
             (ts, paused_seconds, active["id"]),
         )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"error": "session state changed"}), 409
         conn.commit()
         return jsonify({"ok": True})
 
@@ -191,7 +166,13 @@ def register_routes(app):
             return jsonify({"error": "No active session to cancel"}), 400
 
         conn = db.get_db()
-        conn.execute("DELETE FROM sessions WHERE id = ?", (active["id"],))
+        cur = conn.execute(
+            "DELETE FROM sessions WHERE id = ? AND status IN ('running', 'paused')",
+            (active["id"],),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"error": "session state changed"}), 409
         conn.commit()
         return jsonify({"ok": True})
 
@@ -219,10 +200,13 @@ def register_routes(app):
             return jsonify({"error": f"Not enough elapsed time to remove {label}."}), 400
 
         conn = db.get_db()
-        conn.execute(
-            "UPDATE sessions SET paused_seconds = paused_seconds + ? WHERE id = ?",
+        cur = conn.execute(
+            "UPDATE sessions SET paused_seconds = paused_seconds + ? WHERE id = ? AND status IN ('running', 'paused')",
             (seconds, active["id"]),
         )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"error": "session state changed"}), 409
         conn.commit()
         return jsonify(
             {"ok": True, "removed_seconds": seconds, "remaining_seconds": available - seconds}

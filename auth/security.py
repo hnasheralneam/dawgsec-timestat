@@ -68,6 +68,39 @@ def auth_clear_failures(scope: str, key: str) -> None:
     conn.commit()
 
 
+# Scopes for the two-layer user-login rate limiting. The IP+username scope
+# (LOGIN_IP_SCOPE) limits a single device/IP, while the username-only scope
+# (LOGIN_ACCOUNT_SCOPE) is a global per-account lockout so an attacker rotating
+# source IPs still can't exceed LOGIN_ACCOUNT_MAX_ATTEMPTS per window.
+LOGIN_IP_SCOPE = "user-login"
+LOGIN_ACCOUNT_SCOPE = "user-login-account"
+
+
+def _account_key(username: str) -> str:
+    return f"{LOGIN_ACCOUNT_SCOPE}:{(username or '').strip().lower()}"
+
+
+def user_login_is_limited(username: str) -> bool:
+    ip_key = auth_limit_key(LOGIN_IP_SCOPE, username)
+    if auth_is_limited(LOGIN_IP_SCOPE, ip_key, config.LOGIN_MAX_ATTEMPTS):
+        return True
+    return auth_is_limited(
+        LOGIN_ACCOUNT_SCOPE, _account_key(username), config.LOGIN_ACCOUNT_MAX_ATTEMPTS
+    )
+
+
+def user_login_record_failure(username: str) -> None:
+    ip_key = auth_limit_key(LOGIN_IP_SCOPE, username)
+    auth_record_failure(LOGIN_IP_SCOPE, ip_key)
+    auth_record_failure(LOGIN_ACCOUNT_SCOPE, _account_key(username))
+
+
+def user_login_clear_failures(username: str) -> None:
+    ip_key = auth_limit_key(LOGIN_IP_SCOPE, username)
+    auth_clear_failures(LOGIN_IP_SCOPE, ip_key)
+    auth_clear_failures(LOGIN_ACCOUNT_SCOPE, _account_key(username))
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):

@@ -3,6 +3,9 @@
 {% block header_title %}Admin Dashboard{% endblock %}
 {% block header_subtitle %}Delete users or selectively remove their tasks.{% endblock %}
 {% block header_nav %}
+  <a href="{{ url_for('admin_analytics') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="Team analytics">
+    <span class="material-symbols-rounded" aria-hidden="true">analytics</span>
+  </a>
   <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" data-tooltip="User dashboard">
     <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
   </a>

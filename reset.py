@@ -20,6 +20,7 @@ def main() -> None:
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    rowcount = 0
     try:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
         if "login_code" in columns:
@@ -33,14 +34,15 @@ def main() -> None:
                 "UPDATE users SET code_hash = ? WHERE username = ?",
                 (generate_password_hash(new_code), username),
             )
+        rowcount = cur.rowcount
         conn.commit()
     finally:
         conn.close()
 
-    if cur.rowcount == 0:
+    if rowcount == 0:
         raise SystemExit("No user was updated. Check the username and database path.")
 
-    print("rows_updated:", cur.rowcount)
+    print("rows_updated:", rowcount)
     print("new_code:", new_code)
 
 

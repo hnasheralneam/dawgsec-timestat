@@ -151,6 +151,12 @@ def init_db() -> None:
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_user_end_ts ON sessions(user_id, end_ts)"
     )
+    # Supports the collaboration "new starts" feed (started_session_events),
+    # which filters on created_ts and is polled every few seconds. Without this
+    # index that query table-scans sessions as the table grows.
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_created_ts ON sessions(created_ts)"
+    )
     # DB-level guard against a user ending up with two concurrently active
     # (running/paused) sessions when two requests race each other (realistic
     # under Gunicorn's multiple worker processes). The check-then-insert in

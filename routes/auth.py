@@ -3,7 +3,6 @@ import sqlite3
 from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import config
 import db
 from utils import helpers
 from utils import parsing
@@ -69,12 +68,12 @@ def register_routes(app):
 
         username, username_error = parsing.parse_username(request.form.get("username"))
         code = request.form.get("code", "").strip()
-        rate_key = security.auth_limit_key("user-login", request.form.get("username") or "")
-        if security.auth_is_limited("user-login", rate_key, config.LOGIN_MAX_ATTEMPTS):
+        raw_username = request.form.get("username") or ""
+        if security.user_login_is_limited(raw_username):
             flash("Too many login attempts. Please wait a few minutes and try again.", "error")
             return redirect(url_for("login"))
         if username_error:
-            security.auth_record_failure("user-login", rate_key)
+            security.user_login_record_failure(raw_username)
             flash("Invalid username or 6-digit code.", "error")
             return redirect(url_for("login"))
         conn = db.get_db()
@@ -83,11 +82,11 @@ def register_routes(app):
         ).fetchone()
 
         if not user or not check_password_hash(user["code_hash"], code):
-            security.auth_record_failure("user-login", rate_key)
+            security.user_login_record_failure(raw_username)
             flash("Invalid username or 6-digit code.", "error")
             return redirect(url_for("login"))
 
-        security.auth_clear_failures("user-login", rate_key)
+        security.user_login_clear_failures(raw_username)
         session.clear()
         session["user_id"] = user["id"]
         session.permanent = True
