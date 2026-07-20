@@ -13,7 +13,7 @@ if [ ! -f .env ]; then
     sed -i.bak "s/^SECRET_KEY=.*/SECRET_KEY=${secret_key}/" .env
     rm -f .env.bak
     echo "Created .env with a generated SECRET_KEY."
-    echo "Edit .env to set ADMIN_USERNAME / ADMIN_PASSWORD before using /admin/login."
+    echo "An ADMIN_CODE will be auto-generated on first startup of the app."
 else
     echo ".env already exists, leaving it untouched."
 fi

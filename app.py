@@ -49,8 +49,24 @@ def create_app() -> Flask:
     app.secret_key = secret_key
 
     app.config["DATABASE"] = DB_PATH
-    app.config["ADMIN_USERNAME"] = (os.environ.get("ADMIN_USERNAME") or "").strip()
-    app.config["ADMIN_PASSWORD"] = os.environ.get("ADMIN_PASSWORD") or ""
+    admin_code = (os.environ.get("ADMIN_CODE") or "").strip()
+    if not admin_code:
+        # No ADMIN_CODE configured - generate one and persist it to the
+        # first writable env file (see config.ensure_admin_code). We refuse
+        # to fall back to an in-memory only code because that would rotate
+        # on every restart and silently lock the admin out as soon as the
+        # process dies; persisting it is what makes it a real credential.
+        admin_code = config.generate_admin_code()
+        written_path = config.ensure_admin_code(admin_code)
+        warning = (
+            f"No ADMIN_CODE found - generated a new one and wrote it to "
+            f"{written_path}. The admin code is: {admin_code}  "
+            f"Save it now; this message will not be repeated. "
+            f"(Login at /admin/login with this single code.)"
+        )
+        logger.warning(warning)
+        print(f"WARNING: {warning}", file=sys.stderr)
+    app.config["ADMIN_CODE"] = admin_code
     app.config["STORE_LOGIN_CODE_PLAINTEXT"] = (
         os.environ.get("STORE_LOGIN_CODE_PLAINTEXT", "").strip().lower()
         in {"1", "true", "yes"}

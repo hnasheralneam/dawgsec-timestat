@@ -25,7 +25,7 @@ class TimeStatTestCase(unittest.TestCase):
         self.db_path = os.path.join(self.temp_dir.name, "test.db")
         app_module.DB_PATH = self.db_path
         self.env_patch = patch.dict(
-            os.environ, {"ADMIN_USERNAME": "root", "ADMIN_PASSWORD": "secret-pass"}
+            os.environ, {"ADMIN_CODE": "test-admin-code-12345"}
         )
         self.env_patch.start()
         self.app = app_module.create_app()

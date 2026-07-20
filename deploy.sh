@@ -26,7 +26,7 @@ if [ ! -f /etc/timestat/timestat.env ]; then
     secret_key="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
     sudo sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${secret_key}/" /etc/timestat/timestat.env
     echo "Created /etc/timestat/timestat.env with a generated SECRET_KEY."
-    echo "Edit it to set ADMIN_USERNAME / ADMIN_PASSWORD before starting the service."
+    echo "An ADMIN_CODE will be auto-generated on first startup (see journal)."
 else
     echo "/etc/timestat/timestat.env already exists, leaving it untouched."
 fi

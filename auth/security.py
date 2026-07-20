@@ -114,7 +114,7 @@ def login_required(fn):
 
 
 def admin_credentials_configured() -> bool:
-    return bool(current_app.config["ADMIN_USERNAME"] and current_app.config["ADMIN_PASSWORD"])
+    return bool(current_app.config["ADMIN_CODE"])
 
 
 def admin_required(fn):
@@ -127,12 +127,11 @@ def admin_required(fn):
     return wrapped
 
 
-def valid_admin_credentials(username: str, password: str) -> bool:
-    configured_username = current_app.config["ADMIN_USERNAME"]
-    configured_password = current_app.config["ADMIN_PASSWORD"]
-    return compare_digest(username, configured_username) and compare_digest(
-        password, configured_password
-    )
+def valid_admin_credentials(code: str) -> bool:
+    configured_code = current_app.config["ADMIN_CODE"]
+    if not configured_code:
+        return False
+    return compare_digest(code, configured_code)
 
 
 def csrf_token() -> str:

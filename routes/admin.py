@@ -19,7 +19,7 @@ def register_routes(app):
         if request.method == "GET":
             return render_template("admin_login.html")
 
-        rate_key = security.auth_limit_key("admin-login", request.form.get("username") or "")
+        rate_key = security.auth_limit_key("admin-login", "")
         if security.auth_is_limited(
             "admin-login", rate_key, config.ADMIN_LOGIN_MAX_ATTEMPTS
         ):
@@ -31,16 +31,15 @@ def register_routes(app):
 
         if not security.admin_credentials_configured():
             flash(
-                "Admin login is disabled. Set ADMIN_USERNAME and ADMIN_PASSWORD in config.",
+                "Admin login is disabled. Set ADMIN_CODE in your .env file.",
                 "error",
             )
             return redirect(url_for("admin_login"))
 
-        username = (request.form.get("username") or "").strip()
-        password = request.form.get("password") or ""
-        if not security.valid_admin_credentials(username, password):
+        code = (request.form.get("code") or "").strip()
+        if not security.valid_admin_credentials(code):
             security.auth_record_failure("admin-login", rate_key)
-            flash("Invalid admin username or password.", "error")
+            flash("Invalid admin code.", "error")
             return redirect(url_for("admin_login"))
 
         security.auth_clear_failures("admin-login", rate_key)

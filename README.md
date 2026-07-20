@@ -11,8 +11,8 @@ Minimal Flask + SQLite web app for tracking cyber competition preparation time, 
 ```
 
 This creates a `.venv`, installs dependencies, and writes a `.env` file with a
-generated `SECRET_KEY`. Edit `.env` to set `ADMIN_USERNAME` + `ADMIN_PASSWORD`
-if you need `/admin/login`.
+generated `SECRET_KEY`. An `ADMIN_CODE` for `/admin/login` is auto-generated on
+first startup and written back to `.env` (the value is printed to stderr once).
 
 Then run:
 
@@ -55,8 +55,7 @@ All supported env values are in `deploy/timestat.env.example`.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `SECRET_KEY` | Yes | Flask session signing key |
-| `ADMIN_USERNAME` | No | Enables admin login when paired with `ADMIN_PASSWORD` |
-| `ADMIN_PASSWORD` | No | Enables admin login when paired with `ADMIN_USERNAME` |
+| `ADMIN_CODE` | No | Single admin login code. Auto-generated on first startup if unset, written back to `.env`, and printed to stderr/journal once. |
 | `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS. **Leave unset or `false` for HTTP-only deployments (e.g., local testing, HTTP-accessible LAN) to prevent mobile login issues.** |
 | `FLASK_DEBUG` | No | Set `1` for debug mode when running `python app.py` |
 
@@ -69,9 +68,10 @@ All supported env values are in `deploy/timestat.env.example`.
 ```
 
 This installs the app to `/opt/timestat`, creates a `timestat` system user,
-writes `/etc/timestat/timestat.env` with a generated `SECRET_KEY` (edit it to
-set `ADMIN_USERNAME`/`ADMIN_PASSWORD`), and installs + starts the
-`timestat` systemd service. Requires `sudo`.
+writes `/etc/timestat/timestat.env` with a generated `SECRET_KEY`, and installs
++ starts the `timestat` systemd service. On first startup the service also
+generates an `ADMIN_CODE` and writes it back to the env file (watch the journal
+for the one-time printout). Requires `sudo`.
 
 Useful:
 

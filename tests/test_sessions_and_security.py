@@ -23,7 +23,7 @@ class TimeStatTestCase(unittest.TestCase):
         self.db_path = os.path.join(self.temp_dir.name, "test.db")
         app_module.DB_PATH = self.db_path
         self.env_patch = patch.dict(
-            os.environ, {"ADMIN_USERNAME": "root", "ADMIN_PASSWORD": "secret-pass"}
+            os.environ, {"ADMIN_CODE": "test-admin-code-12345"}
         )
         self.env_patch.start()
         self.app = app_module.create_app()
@@ -148,7 +148,7 @@ class AdminCategoryTests(TimeStatTestCase):
         csrf = extract_csrf(login_page.data)
         response = self.client.post(
             "/admin/login",
-            data={"username": "root", "password": "secret-pass", "csrf_token": csrf},
+            data={"code": "test-admin-code-12345", "csrf_token": csrf},
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 302)

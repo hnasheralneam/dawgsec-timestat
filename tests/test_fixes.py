@@ -25,8 +25,7 @@ class FixesTestCase(unittest.TestCase):
         app_module.DB_PATH = self.db_path
         self.env_patch = patch.dict(
             os.environ, {
-                "ADMIN_USERNAME": "root",
-                "ADMIN_PASSWORD": "secret-pass",
+                "ADMIN_CODE": "test-admin-code-12345",
                 "STORE_LOGIN_CODE_PLAINTEXT": "1"
             }
         )
