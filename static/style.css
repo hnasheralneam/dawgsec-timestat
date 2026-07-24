@@ -18,8 +18,8 @@
   --gb-bg1-rgb: 60 56 54;
   --gb-bg2-rgb: 80 73 69;
   --gb-fg-rgb: 235 219 178;
-  --gb-shadow-rgb: 45 42 40;
-  --gb-highlight-rgb: 78 72 68;
+  --gb-shadow-rgb: 12 12 12;
+  --gb-highlight-rgb: 59 59 59;
 }
 
 html, body {
@@ -53,7 +53,7 @@ body {
 .neu-inset {
   background: rgb(var(--gb-bg1-rgb));
   border: 1px solid rgb(var(--gb-bg2-rgb));
-  box-shadow: inset 6px 6px 12px rgb(var(--gb-shadow-rgb)), inset -6px -6px 12px rgb(var(--gb-highlight-rgb));
+  box-shadow: inset 6px 6px 12px rgb(var(--gb-shadow-rgb) / 0.7), inset -6px -6px 12px rgb(var(--gb-highlight-rgb));
   border-radius: 0.9rem;
   outline: 2px solid transparent;
   outline-offset: 2px;
@@ -67,13 +67,13 @@ body {
   border-radius: 0.8rem;
   padding: 0.6rem 0.85rem;
   color: rgb(var(--gb-fg-rgb));
-  box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb)), inset -4px -4px 10px rgb(var(--gb-highlight-rgb));
+  box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb) / 0.7), inset -4px -4px 10px rgb(var(--gb-highlight-rgb));
 }
 
 .neu-input:focus {
   outline: none;
   border-color: rgb(var(--gb-blue-rgb));
-  box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb)), inset -4px -4px 10px rgb(var(--gb-highlight-rgb)), 0 0 0 2px rgb(var(--gb-blue-rgb) / 0.25);
+  box-shadow: inset 4px 4px 10px rgb(var(--gb-shadow-rgb) / 0.7), inset -4px -4px 10px rgb(var(--gb-highlight-rgb)), 0 0 0 2px rgb(var(--gb-blue-rgb) / 0.25);
 }
 
 .neu-btn {
@@ -81,7 +81,7 @@ body {
   padding: 0.55rem 1rem;
   font-weight: 600;
   border: 1px solid transparent;
-  box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb)), -6px -6px 12px rgb(var(--gb-highlight-rgb));
+  box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb)), -6px -6px 12px rgb(var(--gb-highlight-rgb) / 0.55);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
@@ -92,15 +92,15 @@ body {
 
 .neu-btn:active {
   transform: translateY(0);
-  box-shadow: inset 4px 4px 8px rgb(var(--gb-shadow-rgb)), inset -4px -4px 8px rgb(var(--gb-highlight-rgb));
+  box-shadow: inset 4px 4px 8px rgb(var(--gb-shadow-rgb)), inset -4px -4px 8px rgb(var(--gb-highlight-rgb) / 0.55);
 }
 
 .neu-btn-sm {
-  box-shadow: 3px 3px 6px rgb(var(--gb-shadow-rgb)), -3px -3px 6px rgb(var(--gb-highlight-rgb));
+  box-shadow: 3px 3px 6px rgb(var(--gb-shadow-rgb)), -3px -3px 6px rgb(var(--gb-highlight-rgb) / 0.55);
 }
 
 .neu-btn-sm:active {
-  box-shadow: inset 2px 2px 4px rgb(var(--gb-shadow-rgb)), inset -2px -2px 4px rgb(var(--gb-highlight-rgb));
+  box-shadow: inset 2px 2px 4px rgb(var(--gb-shadow-rgb)), inset -2px -2px 4px rgb(var(--gb-highlight-rgb) / 0.55);
 }
 
 @keyframes skeleton-pulse {

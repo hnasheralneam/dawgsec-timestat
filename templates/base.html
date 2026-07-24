@@ -67,7 +67,7 @@
 
       function deriveShadowHighlight(bg0rgb, isDark) {
         return isDark
-          ? { shadow: adjustLightness(bg0rgb, 0.02), highlight: adjustLightness(bg0rgb, 0.13) }
+          ? { shadow: adjustLightness(bg0rgb, -0.11), highlight: adjustLightness(bg0rgb, 0.075) }
           : { shadow: adjustLightness(bg0rgb, -0.18), highlight: adjustLightness(bg0rgb, 0.03) };
       }
 
