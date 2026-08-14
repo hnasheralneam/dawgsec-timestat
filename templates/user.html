@@ -466,36 +466,59 @@
     });
   }
 
+  let recentRequestController = null;
+  let recentRequestSequence = 0;
+
   async function loadRecent({ reset = true } = {}) {
+    const requestSequence = ++recentRequestSequence;
+    if (recentRequestController) recentRequestController.abort();
+    const controller = new AbortController();
+    recentRequestController = controller;
     if (reset && !state.recentLoadedOnce) {
       const tbody = document.getElementById("recentBody");
       if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
     const offset = reset ? 0 : state.recentSessions.length;
     const params = buildRecentParams(offset);
-    const res = await fetch(`/api/users/${targetUserId}/recent-sessions?${params.toString()}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
-    if (reset) {
-      state.recentSessions = data.sessions || [];
-    } else {
-      state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
+    try {
+      const res = await fetch(`/api/users/${targetUserId}/recent-sessions?${params.toString()}`, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
+      if (requestSequence !== recentRequestSequence) return;
+      if (reset) {
+        state.recentSessions = data.sessions || [];
+      } else {
+        state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
+      }
+      state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
+      state.recentHasMore = Boolean(data.has_more);
+      state.recentLoadedOnce = true;
+      renderRecentTable(state.recentSessions);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === recentRequestSequence) recentRequestController = null;
     }
-    state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
-    state.recentHasMore = Boolean(data.has_more);
-    state.recentLoadedOnce = true;
-    renderRecentTable(state.recentSessions);
   }
+
+  let pageRequestController = null;
+  let pageRequestSequence = 0;
 
   async function loadPageData() {
     // Start the data requests immediately; Chart.js loads in parallel
     // instead of gating them (it only needs to be ready before rendering).
+    const requestSequence = ++pageRequestSequence;
+    if (pageRequestController) pageRequestController.abort();
+    const controller = new AbortController();
+    pageRequestController = controller;
     const fetches = Promise.all([
-      fetch(`/api/users/${targetUserId}/stats`),
-      fetch(`/api/users/${targetUserId}/activity-grid?days=140`)
+      fetch(`/api/users/${targetUserId}/stats`, { signal: controller.signal }),
+      fetch(`/api/users/${targetUserId}/activity-grid?days=140`, { signal: controller.signal })
     ]);
     await window.ensureCharts().catch(() => {});
     const [statsRes, activityRes] = await fetches;
+
+    if (requestSequence !== pageRequestSequence) return;
 
     const statsData = await statsRes.json();
     const activityData = await activityRes.json();
@@ -503,15 +526,27 @@
     if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
     if (!activityRes.ok) throw new Error(activityData.error || "Could not load activity grid");
 
-    renderCategoryChart(statsData.categories || []);
+    try {
+      renderCategoryChart(statsData.categories || []);
+    } catch (err) {
+      console.warn("Could not render profile category chart", err);
+      document.getElementById("categoryEmpty").classList.remove("hidden");
+    }
     state.activityDays = normalizeGrid(activityData);
     state.activityMaxSeconds = activityData.max_seconds || 0;
     // The 14-day trend is the tail of the 140-day grid (the endpoint always
     // ends on today), so slice it locally instead of a second API call.
-    renderDailyTrend(state.activityDays.slice(-14));
+    try {
+      renderDailyTrend(state.activityDays.slice(-14));
+    } catch (err) {
+      console.warn("Could not render profile trend chart", err);
+      document.getElementById("dailyTrendEmpty").classList.remove("hidden");
+    }
     await loadRecent({ reset: true });
+    if (requestSequence !== pageRequestSequence) return;
     paintActivityLegend();
     renderActivityGrid(state.activityDays, state.activityMaxSeconds);
+    if (requestSequence === pageRequestSequence) pageRequestController = null;
   }
 
   let recentSearchTimer = null;
@@ -667,6 +702,7 @@
 
   paintActivityLegend();
   loadPageData().catch(async (err) => {
+    if (err.name === "AbortError") return;
     if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
       window.location.href = "/login";
       return;

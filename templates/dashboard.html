@@ -442,14 +442,27 @@
     updateButtons();
   }
 
+  let statusRequestController = null;
+  let statusRequestSequence = 0;
+
   async function loadStatus() {
+    const requestSequence = ++statusRequestSequence;
+    if (statusRequestController) statusRequestController.abort();
+    const controller = new AbortController();
+    statusRequestController = controller;
     const statusUrl = state.collabSinceTs === null
       ? "/api/status"
       : `/api/status?collab_since=${state.collabSinceTs}`;
-    const res = await fetch(statusUrl);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load session status");
-    applyStatus(data);
+    try {
+      const res = await fetch(statusUrl, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load session status");
+      if (requestSequence === statusRequestSequence) applyStatus(data);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === statusRequestSequence) statusRequestController = null;
+    }
   }
 
   function applyStatus(data) {
@@ -480,16 +493,30 @@
     renderSession();
   }
 
+  let weeklyRequestController = null;
+  let weeklyRequestSequence = 0;
+
   async function loadWeeklyLeaderboard() {
+    const requestSequence = ++weeklyRequestSequence;
+    if (weeklyRequestController) weeklyRequestController.abort();
+    const controller = new AbortController();
+    weeklyRequestController = controller;
     const tbody = document.getElementById("weeklyLeaderboardBody");
     if (!state.weeklyLeaderboardLoaded) {
       tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
-    const res = await fetch("/api/leaderboard/weekly?limit=5");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
-    state.weeklyLeaderboardLoaded = true;
-    applyWeeklyLeaderboard(data);
+    try {
+      const res = await fetch("/api/leaderboard/weekly?limit=5", { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
+      if (requestSequence !== weeklyRequestSequence) return;
+      state.weeklyLeaderboardLoaded = true;
+      applyWeeklyLeaderboard(data);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === weeklyRequestSequence) weeklyRequestController = null;
+    }
   }
 
   function applyWeeklyLeaderboard(data) {
@@ -511,7 +538,8 @@
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
       const isMe = row.user_id === currentUserId;
-      const medal = window.MEDALS[row.rank - 1] || "";
+      const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
+      const medal = medals[row.rank - 1] || "";
       if (isMe) tr.classList.add("font-semibold");
       tr.innerHTML = `
         <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
@@ -562,14 +590,27 @@
     });
   }
 
+  let statsRequestController = null;
+  let statsRequestSequence = 0;
+
   async function loadStats() {
+    const requestSequence = ++statsRequestSequence;
+    if (statsRequestController) statsRequestController.abort();
+    const controller = new AbortController();
+    statsRequestController = controller;
     // Chart.js is lazy-loaded from the same origin; awaiting here (rather
     // than before the fetch) lets the request start immediately while the
     // script downloads in parallel. Repeated calls share one load.
     await window.ensureCharts().catch(() => {});
-    const res = await fetch("/api/stats");
-    const data = await res.json();
-    applyStats(data);
+    try {
+      const res = await fetch("/api/stats", { signal: controller.signal });
+      const data = await res.json();
+      if (requestSequence === statsRequestSequence) applyStats(data);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === statsRequestSequence) statsRequestController = null;
+    }
   }
 
   function applyStats(data) {
@@ -633,20 +674,34 @@
     });
   }
 
+  let trendRequestController = null;
+  let trendRequestSequence = 0;
+
   async function loadDailyTrend() {
+    const requestSequence = ++trendRequestSequence;
+    if (trendRequestController) trendRequestController.abort();
+    const controller = new AbortController();
+    trendRequestController = controller;
     await window.ensureCharts().catch(() => {});
-    const res = await fetch(`/api/users/${currentUserId}/activity-grid?days=14`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load daily trend");
-    const days = normalizeGrid(data);
-    if (state.current && days.length) {
-      // The activity-grid endpoint only totals completed sessions, so an
-      // in-progress session's elapsed time is missing from today's bucket
-      // (the last entry, since the endpoint always includes today). Fold it
-      // in so today's point matches what the other dashboard charts show.
-      days[days.length - 1].seconds += state.timerBase;
+    try {
+      const res = await fetch(`/api/users/${currentUserId}/activity-grid?days=14`, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load daily trend");
+      if (requestSequence !== trendRequestSequence) return;
+      const days = normalizeGrid(data);
+      if (state.current && days.length) {
+        // The activity-grid endpoint only totals completed sessions, so an
+        // in-progress session's elapsed time is missing from today's bucket
+        // (the last entry, since the endpoint always includes today). Fold it
+        // in so today's point matches what the other dashboard charts show.
+        days[days.length - 1].seconds += state.timerBase;
+      }
+      renderDailyTrend(days);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === trendRequestSequence) trendRequestController = null;
     }
-    renderDailyTrend(days);
   }
 
   function normalizeGrid(data) {
@@ -773,25 +828,39 @@
     });
   }
 
+  let recentRequestController = null;
+  let recentRequestSequence = 0;
+
   async function loadRecent({ reset = true } = {}) {
+    const requestSequence = ++recentRequestSequence;
+    if (recentRequestController) recentRequestController.abort();
+    const controller = new AbortController();
     if (reset && !state.recentLoadedOnce) {
       const tbody = document.getElementById("recentBody");
       tbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
     const offset = reset ? 0 : state.recentSessions.length;
     const params = buildRecentParams(offset);
-    const res = await fetch(`/api/recent-sessions?${params.toString()}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
-    if (reset) {
-      state.recentSessions = data.sessions || [];
-    } else {
-      state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
+    recentRequestController = controller;
+    try {
+      const res = await fetch(`/api/recent-sessions?${params.toString()}`, { signal: controller.signal });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load recent sessions");
+      if (requestSequence !== recentRequestSequence) return;
+      if (reset) {
+        state.recentSessions = data.sessions || [];
+      } else {
+        state.recentSessions = [...state.recentSessions, ...(data.sessions || [])];
+      }
+      state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
+      state.recentHasMore = Boolean(data.has_more);
+      state.recentLoadedOnce = true;
+      renderRecent(state.recentSessions);
+    } catch (err) {
+      if (err.name !== "AbortError") throw err;
+    } finally {
+      if (requestSequence === recentRequestSequence) recentRequestController = null;
     }
-    state.recentTotal = typeof data.total === "number" ? data.total : state.recentSessions.length;
-    state.recentHasMore = Boolean(data.has_more);
-    state.recentLoadedOnce = true;
-    renderRecent(state.recentSessions);
   }
 
   let recentSearchTimer = null;
@@ -1140,29 +1209,16 @@
     }
   }
 
-  bootstrap();
+  bootstrap().catch((err) => {
+    // A broken optional widget must not leave the session controls unusable.
+    console.error("Dashboard bootstrap failed", err);
+    startStatusPolling();
+    loadStatus().catch(() => {});
+  });
 
-  // Daily trend + recent history aren't on the SSE digest yet; poll them on a
-  // slower cadence (lower frequency than before since the live data now flows
-  // over the stream). Skipped while the tab is hidden.
-  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-  const slowConnection = Boolean(connection && (
-    connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
-  ));
-  const dashboardRefreshMs = slowConnection ? 300000 : 60000;
-  setInterval(() => {
-    if (document.hidden) return;
-    Promise.all([
-      loadDailyTrend(),
-      loadRecent({ reset: true })
-    ]).catch(async (err) => {
-      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
-        window.location.href = "/login";
-        return;
-      }
-      setMessage("Could not refresh dashboard data.", true);
-    });
-  }, dashboardRefreshMs);
+  // History and the daily trend refresh after a local data change (finish,
+  // edit, delete, or a queued action). The live SSE stream handles session
+  // state and team aggregates; avoid periodic requests while nothing changed.
   window.addEventListener("online", flushPendingActions);
 </script>
 {% endblock %}

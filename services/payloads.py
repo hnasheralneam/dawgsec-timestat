@@ -4,11 +4,11 @@ Kept in one place so the REST endpoints (``/api/status`` etc.) and the SSE
 stream (``/api/stream``) produce identical payloads and can't drift apart.
 """
 
-import config
 import db
 from flask import session as flask_session
 from utils import helpers
 from services import queries
+from services import live_cache
 
 
 def build_status_payload(user_id, current_ts, collab_since_ts, pop_alert=True):
@@ -36,8 +36,15 @@ def build_status_payload(user_id, current_ts, collab_since_ts, pop_alert=True):
     notify_on_collab_starts = (
         bool(user_settings["notify_on_collab_starts"]) if user_settings else True
     )
-    team_presence = queries.collaborator_presence_rows(current_ts, exclude_user_id=user_id)
-    new_starts = queries.started_session_events(collab_since_ts, exclude_user_id=user_id)
+    collaboration = live_cache.collaboration_snapshot(current_ts)
+    team_presence = [
+        row for row in collaboration["presence"] if row["user_id"] != user_id
+    ]
+    new_starts = [
+        row
+        for row in collaboration["starts"]
+        if row["user_id"] != user_id and row["start_ts"] >= collab_since_ts
+    ]
 
     payload = {
         "server_ts": current_ts,
@@ -63,16 +70,17 @@ def build_weekly_digest(user_id, current_ts, limit=5):
     """Return a dashboard 'digest': the weekly leaderboard + weekly category
     breakdowns (self and team). Emitted periodically by the SSE stream so the
     leaderboard/charts update without the client polling."""
-    since_ts = current_ts - config.WEEK_SECONDS
-    weekly_rows = queries.leaderboard_rows(current_ts, since_ts=since_ts)
-    if limit is not None:
-        weekly_rows = weekly_rows[:limit]
-    leaderboard = {"leaderboard": weekly_rows, "server_ts": current_ts, "since_ts": since_ts}
-    my_week = queries.category_rows_for_user(user_id, current_ts, since_ts=since_ts)
-    team_week = queries.category_rows_for_user(None, current_ts, since_ts=since_ts)
+    base = live_cache.weekly_digest_base(current_ts, limit=limit)
+    leaderboard = {
+        "leaderboard": base["leaderboard"],
+        "server_ts": current_ts,
+        "since_ts": base["since_ts"],
+    }
+    my_week = live_cache.user_weekly_categories(user_id, current_ts)
+    team_week = base["team_categories"]
     stats = {
         "my_categories_week": my_week,
         "team_categories_week": team_week,
-        "since_ts": since_ts,
+        "since_ts": base["since_ts"],
     }
     return {"leaderboard": leaderboard, "stats": stats}

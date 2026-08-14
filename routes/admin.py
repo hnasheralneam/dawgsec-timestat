@@ -6,6 +6,7 @@ import config
 import db
 from services import analytics
 from services import queries
+from services import live_cache
 from utils import helpers
 from utils import parsing
 from auth import security
@@ -237,6 +238,7 @@ def register_routes(app):
             (user_id, *existing_ids),
         )
         conn.commit()
+        live_cache.invalidate()
         return jsonify({"ok": True, "deleted_count": len(existing_ids)})
 
     @app.post("/admin/users/<int:user_id>/delete")
@@ -254,6 +256,7 @@ def register_routes(app):
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
+        live_cache.invalidate()
         if session.get("user_id") == user_id:
             session.pop("user_id", None)
         flash(f"Removed user '{target_user['username']}' and all associated tasks.", "success")

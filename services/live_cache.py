@@ -1,0 +1,173 @@
+"""Shared, change-aware snapshots for live dashboard data.
+
+The dashboard may have many open SSE connections, but the team-wide presence
+and aggregate queries are identical for all of them. Keep those snapshots in
+the worker process and invalidate them when the app writes session data. A
+small SQLite ``data_version`` check also catches writes made by another
+Gunicorn worker without repeating the expensive aggregate queries per client.
+"""
+
+import atexit
+import os
+import sqlite3
+import threading
+import time
+
+from flask import current_app
+
+from services import queries
+import config
+
+
+_LOCK = threading.RLock()
+_MONITOR_CONNECTION = None
+_MONITOR_PATH = None
+_MONITOR_INODE = None
+_LAST_DATA_VERSION = None
+_LAST_CHECK = 0.0
+_REVISION = 0
+_CHECK_INTERVAL = 0.5
+
+_collaboration_revision = None
+_collaboration_snapshot = None
+_digest_revision = None
+_digest_base = None
+_user_digest_revisions = {}
+
+
+def _close_monitor() -> None:
+    global _MONITOR_CONNECTION
+    with _LOCK:
+        if _MONITOR_CONNECTION is not None:
+            _MONITOR_CONNECTION.close()
+            _MONITOR_CONNECTION = None
+
+
+atexit.register(_close_monitor)
+
+
+def _clear_snapshots() -> None:
+    global _collaboration_revision, _collaboration_snapshot
+    global _digest_revision, _digest_base
+    _collaboration_revision = None
+    _collaboration_snapshot = None
+    _digest_revision = None
+    _digest_base = None
+    _user_digest_revisions.clear()
+
+
+def invalidate() -> None:
+    """Mark all live snapshots stale after a successful application write."""
+    global _LAST_DATA_VERSION, _REVISION
+    with _LOCK:
+        _REVISION += 1
+        # Establish a new monitor baseline on the next check. This avoids
+        # counting the same local commit twice.
+        _LAST_DATA_VERSION = None
+        _clear_snapshots()
+
+
+def _ensure_monitor_locked(path: str):
+    global _MONITOR_CONNECTION, _MONITOR_PATH, _MONITOR_INODE
+
+    try:
+        inode = os.stat(path).st_ino
+    except OSError:
+        inode = None
+
+    if (
+        _MONITOR_CONNECTION is not None
+        and _MONITOR_PATH == path
+        and _MONITOR_INODE == inode
+    ):
+        return _MONITOR_CONNECTION
+
+    if _MONITOR_CONNECTION is not None:
+        _MONITOR_CONNECTION.close()
+
+    _MONITOR_CONNECTION = sqlite3.connect(
+        path, isolation_level=None, check_same_thread=False
+    )
+    _MONITOR_CONNECTION.execute("PRAGMA query_only = ON")
+    _MONITOR_CONNECTION.execute("PRAGMA busy_timeout = 5000")
+    _MONITOR_PATH = path
+    _MONITOR_INODE = inode
+    return _MONITOR_CONNECTION
+
+
+def _revision_locked() -> int:
+    global _LAST_CHECK, _LAST_DATA_VERSION, _REVISION
+
+    now = time.monotonic()
+    if now - _LAST_CHECK < _CHECK_INTERVAL:
+        return _REVISION
+
+    monitor = _ensure_monitor_locked(current_app.config["DATABASE"])
+    data_version = int(monitor.execute("PRAGMA data_version").fetchone()[0])
+    if _LAST_DATA_VERSION is not None and data_version != _LAST_DATA_VERSION:
+        _REVISION += 1
+        _clear_snapshots()
+    _LAST_DATA_VERSION = data_version
+    _LAST_CHECK = now
+    return _REVISION
+
+
+def revision() -> int:
+    """Return a cheap process-shared revision, noticing external DB commits."""
+    with _LOCK:
+        return _revision_locked()
+
+
+def collaboration_snapshot(current_ts: int):
+    """Return all active users and recent starts for the current DB revision."""
+    global _collaboration_revision, _collaboration_snapshot
+    with _LOCK:
+        current_revision = _revision_locked()
+        if _collaboration_revision != current_revision:
+            _collaboration_snapshot = {
+                "presence": queries.collaborator_presence_rows(None),
+                "starts": queries.started_session_events(
+                    current_ts - config.COLLAB_SINCE_MAX_AGE_SECONDS, None
+                ),
+            }
+            _collaboration_revision = current_revision
+        return _collaboration_snapshot
+
+
+def weekly_digest_base(current_ts: int, limit: int | None = 5):
+    """Return leaderboard/team totals once per revision, shared by SSE clients."""
+    global _digest_revision, _digest_base
+    with _LOCK:
+        current_revision = _revision_locked()
+        if _digest_revision != current_revision:
+            since_ts = current_ts - config.WEEK_SECONDS
+            _digest_base = {
+                "leaderboard": queries.leaderboard_rows(current_ts, since_ts=since_ts),
+                "team_categories": queries.category_rows_for_user(
+                    None, current_ts, since_ts=since_ts
+                ),
+                "since_ts": since_ts,
+            }
+            _digest_revision = current_revision
+            _user_digest_revisions.clear()
+
+        rows = _digest_base["leaderboard"]
+        return {
+            "leaderboard": rows if limit is None else rows[:limit],
+            "team_categories": _digest_base["team_categories"],
+            "since_ts": _digest_base["since_ts"],
+        }
+
+
+def user_weekly_categories(user_id: int, current_ts: int):
+    """Return one user's weekly category totals once per DB revision."""
+    with _LOCK:
+        current_revision = _revision_locked()
+        cached = _user_digest_revisions.get(user_id)
+        if cached and cached[0] == current_revision:
+            return cached[1]
+
+        since_ts = current_ts - config.WEEK_SECONDS
+        rows = queries.category_rows_for_user(user_id, current_ts, since_ts=since_ts)
+        _user_digest_revisions[user_id] = (current_revision, rows)
+        return rows

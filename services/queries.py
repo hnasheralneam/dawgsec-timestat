@@ -69,10 +69,15 @@ def get_user_by_id(user_id: int):
     ).fetchone()
 
 
-def collaborator_presence_rows(current_ts: int, exclude_user_id: int):
+def collaborator_presence_rows(current_ts: int | None = None, exclude_user_id: int | None = None):
     conn = db.get_db()
+    filters = ["s.status IN ('running', 'paused')"]
+    params = []
+    if exclude_user_id is not None:
+        filters.append("s.user_id != ?")
+        params.append(exclude_user_id)
     rows = conn.execute(
-        """
+        f"""
         SELECT
             s.id,
             s.user_id,
@@ -86,11 +91,10 @@ def collaborator_presence_rows(current_ts: int, exclude_user_id: int):
             s.category_name
         FROM sessions s
         JOIN users u ON u.id = s.user_id
-        WHERE s.status IN ('running', 'paused')
-          AND s.user_id != ?
+        WHERE {' AND '.join(filters)}
         ORDER BY s.start_ts DESC
         """,
-        (exclude_user_id,),
+        params,
     ).fetchall()
     return [
         {
@@ -106,10 +110,15 @@ def collaborator_presence_rows(current_ts: int, exclude_user_id: int):
     ]
 
 
-def started_session_events(since_ts: int, exclude_user_id: int):
+def started_session_events(since_ts: int, exclude_user_id: int | None = None):
     conn = db.get_db()
+    filters = ["s.created_ts >= ?"]
+    params: list[object] = [since_ts]
+    if exclude_user_id is not None:
+        filters.insert(0, "s.user_id != ?")
+        params.insert(0, exclude_user_id)
     rows = conn.execute(
-        """
+        f"""
         SELECT
             s.id AS session_id,
             s.user_id,
@@ -119,12 +128,11 @@ def started_session_events(since_ts: int, exclude_user_id: int):
             s.category_name
         FROM sessions s
         JOIN users u ON u.id = s.user_id
-        WHERE s.user_id != ?
-          AND s.created_ts >= ?
+        WHERE {' AND '.join(filters)}
         ORDER BY s.created_ts ASC, s.id ASC
         LIMIT ?
         """,
-        (exclude_user_id, since_ts, config.COLLAB_EVENT_LIMIT),
+        (*params, config.COLLAB_EVENT_LIMIT),
     ).fetchall()
     return [
         {

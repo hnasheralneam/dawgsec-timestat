@@ -16,6 +16,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 import app as app_module
 import config
@@ -138,6 +139,36 @@ class LoginCsrfTests(TimeStatTestCase):
         self.assertIn(b"Invalid request token", resp.data)
         with self.client.session_transaction() as sess:
             self.assertNotIn("user_id", sess)
+
+
+class FrontendResilienceTests(unittest.TestCase):
+    """Guard the shared-script failure path that browser tests may miss."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_base_template_provides_shared_runtime_fallbacks(self):
+        base = (self.ROOT / "templates" / "base.html").read_text()
+        self.assertIn('window.MEDALS = ["🥇", "🥈", "🥉"];', base)
+        self.assertIn("window.postJson = window.postJson ||", base)
+        self.assertIn("window.renderOrUpdateChart = window.renderOrUpdateChart || (() => null);", base)
+        self.assertIn("Some optional enhancements are unavailable", base)
+        self.assertIn("__timestatCommonLoadFailed", base)
+
+    def test_leaderboards_do_not_index_missing_medals_global(self):
+        for name in (
+            "dashboard.html",
+            "weekly_leaderboard.html",
+            "all_time_stats.html",
+            "admin_analytics.html",
+        ):
+            page = (self.ROOT / "templates" / name).read_text()
+            self.assertIn("Array.isArray(window.MEDALS)", page, name)
+            self.assertNotIn("window.MEDALS[row.rank - 1]", page, name)
+
+    def test_dashboard_bootstrap_handles_widget_failure(self):
+        dashboard = (self.ROOT / "templates" / "dashboard.html").read_text()
+        self.assertIn("bootstrap().catch", dashboard)
+        self.assertIn('console.error("Dashboard bootstrap failed", err)', dashboard)
 
 
 class AtomicTransitionTests(TimeStatTestCase):

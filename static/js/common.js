@@ -68,6 +68,9 @@
    * @returns {Chart} the live (created or updated) Chart.js instance.
    */
   function renderOrUpdateChart(chart, ctx, config) {
+    // Charts are optional. A failed lazy-load must not turn a session action
+    // or data refresh into a failed operation.
+    if (typeof window.Chart === "undefined" || !ctx) return chart || null;
     if (chart) {
       const oldLabels = chart.data.labels || [];
       const newLabels = config.data.labels || [];

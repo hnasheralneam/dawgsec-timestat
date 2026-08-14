@@ -159,7 +159,8 @@
     for (const row of rows) {
       const tr = document.createElement("tr");
       tr.className = "border-t border-gb-bg2";
-      const medal = window.MEDALS[row.rank - 1] || `<span class="text-gb-fg/60">${row.rank}</span>`;
+      const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
+      const medal = medals[row.rank - 1] || `<span class="text-gb-fg/60">${row.rank}</span>`;
       tr.innerHTML = `
         <td class="py-2">${medal}</td>
         <td class="py-2"><a href="/users/${row.user_id}" class="font-medium text-gb-blue hover:text-gb-purple inline-flex items-center gap-1">

@@ -14,7 +14,53 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='logo.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+  <script>
+    // Keep tiny, non-optional display data available even if the shared asset
+    // is unavailable on a flaky connection. common.js replaces this value.
+    window.MEDALS = ["🥇", "🥈", "🥉"];
+
+    // These small fallbacks keep session controls and plain tables usable when
+    // common.js is temporarily unavailable. The normal implementations below
+    // replace them as soon as the shared asset loads.
+    window.escapeHtml = window.escapeHtml || ((value) => String(value ?? "")
+      .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;").replaceAll("'", "&#39;"));
+    window.formatDuration = window.formatDuration || ((total) => {
+      const sec = Math.max(0, Math.floor(total || 0));
+      return [Math.floor(sec / 3600), Math.floor((sec % 3600) / 60), sec % 60]
+        .map((part) => String(part).padStart(2, "0")).join(":");
+    });
+    window.formatHours = window.formatHours || ((seconds) => (seconds / 3600).toFixed(2));
+    window.tsToLocal = window.tsToLocal || ((ts) => ts ? new Date(ts * 1000).toLocaleString() : "-");
+    window.getCsrfToken = window.getCsrfToken || (() => {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      return meta ? meta.getAttribute("content") || "" : "";
+    });
+    window.postJson = window.postJson || (async (url, body = {}) => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": window.getCsrfToken(),
+          "X-TimeStat-Client-State": "1"
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      return data;
+    });
+    window.cssRgb = window.cssRgb || ((name) =>
+      `rgb(${getComputedStyle(document.documentElement).getPropertyValue(name).trim()})`);
+    window.themeColors = window.themeColors || (() => []);
+    window.ensureCharts = window.ensureCharts || (() =>
+      typeof window.Chart !== "undefined"
+        ? Promise.resolve()
+        : Promise.reject(new Error("Charts are unavailable")));
+    window.renderOrUpdateChart = window.renderOrUpdateChart || (() => null);
+    window.showAppConfirm = window.showAppConfirm || ((message) => Promise.resolve(window.confirm(message)));
+  </script>
+  <script src="{{ url_for('static', filename='js/common.js') }}" onerror="window.__timestatCommonLoadFailed = true;"></script>
 </head>
 <body class="min-h-screen">
   <div class="max-w-6xl mx-auto px-4 py-6">
@@ -420,6 +466,12 @@
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js').catch(() => {});
       });
+    }
+    if (window.__timestatCommonLoadFailed) {
+      const notice = document.createElement('div');
+      notice.className = 'fixed bottom-4 left-4 right-4 z-50 neu-surface px-3 py-2 text-sm text-gb-yellow';
+      notice.textContent = 'Some optional enhancements are unavailable. Core tracking remains active; refresh to retry.';
+      document.body.prepend(notice);
     }
     // "Add to Home screen" prompt. Capture beforeinstallprompt (browsers only
     // fire it once), surface a small floating button, and trigger the native

@@ -46,12 +46,13 @@ def run_daily_database_backup(db_path: str, base_dir: str) -> None:
     now_local = datetime.now().astimezone()
     today_prefix = now_local.strftime("%Y%m%d")
     has_today_backup = False
-    for entry in os.scandir(backup_dir):
-        if not entry.is_file(follow_symlinks=False):
-            continue
-        if entry.name.startswith(f"timestat-{today_prefix}-") and entry.name.endswith(".db"):
-            has_today_backup = True
-            break
+    with os.scandir(backup_dir) as entries:
+        for entry in entries:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if entry.name.startswith(f"timestat-{today_prefix}-") and entry.name.endswith(".db"):
+                has_today_backup = True
+                break
 
     if not has_today_backup:
         backup_filename = f"timestat-{now_local.strftime('%Y%m%d-%H%M%S')}.db"
@@ -71,13 +72,14 @@ def run_daily_database_backup(db_path: str, base_dir: str) -> None:
 
     cutoff = now_local - timedelta(days=config.BACKUP_RETENTION_DAYS)
     cutoff_ts = cutoff.timestamp()
-    for entry in os.scandir(backup_dir):
-        if not entry.is_file(follow_symlinks=False):
-            continue
-        if not (entry.name.startswith("timestat-") and entry.name.endswith(".db")):
-            continue
-        if entry.stat(follow_symlinks=False).st_mtime < cutoff_ts:
-            os.remove(entry.path)
+    with os.scandir(backup_dir) as entries:
+        for entry in entries:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            if not (entry.name.startswith("timestat-") and entry.name.endswith(".db")):
+                continue
+            if entry.stat(follow_symlinks=False).st_mtime < cutoff_ts:
+                os.remove(entry.path)
 
 
 def init_db() -> None:

@@ -8,12 +8,14 @@ from utils import helpers
 from utils import parsing
 from services import queries
 from services import payloads
+from services import live_cache
 from auth import security
 
 
 def _action_response(user_id: int, current_ts: int, **extra):
     """Return the authoritative session state with every mutation response."""
     payload = {"ok": True}
+    live_cache.invalidate()
     # Keep the small legacy response for non-dashboard clients while allowing
     # the current client to avoid a follow-up status request.
     if request.headers.get("X-TimeStat-Client-State") == "1":
@@ -250,6 +252,7 @@ def register_routes(app):
 
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         conn.commit()
+        live_cache.invalidate()
         return jsonify({"ok": True})
 
     @app.post("/api/session/update")
@@ -295,4 +298,5 @@ def register_routes(app):
             (category["name"], note, session_id),
         )
         conn.commit()
+        live_cache.invalidate()
         return jsonify({"ok": True})

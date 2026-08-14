@@ -79,7 +79,8 @@
     for (const row of data.leaderboard) {
       const tr = document.createElement("tr");
       const isMe = row.user_id === currentUserId;
-      const medal = window.MEDALS[row.rank - 1] || "";
+      const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
+      const medal = medals[row.rank - 1] || "";
       if (isMe) tr.classList.add("font-semibold");
       tr.innerHTML = `
         <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">#${row.rank}</span>`}</td>
