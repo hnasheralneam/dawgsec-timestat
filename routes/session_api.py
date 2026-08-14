@@ -11,6 +11,19 @@ from services import payloads
 from auth import security
 
 
+def _action_response(user_id: int, current_ts: int, **extra):
+    """Return the authoritative session state with every mutation response."""
+    payload = {"ok": True}
+    # Keep the small legacy response for non-dashboard clients while allowing
+    # the current client to avoid a follow-up status request.
+    if request.headers.get("X-TimeStat-Client-State") == "1":
+        payload["status"] = payloads.build_status_payload(
+            user_id, current_ts, current_ts, pop_alert=True
+        )
+    payload.update(extra)
+    return jsonify(payload)
+
+
 def register_routes(app):
     @app.get("/api/status")
     @security.login_required
@@ -69,7 +82,7 @@ def register_routes(app):
         except sqlite3.IntegrityError:
             conn.rollback()
             return jsonify({"error": "session already active"}), 409
-        return jsonify({"ok": True})
+        return _action_response(user_id, ts)
 
     @app.post("/api/session/pause")
     @security.login_required
@@ -93,7 +106,7 @@ def register_routes(app):
         except sqlite3.IntegrityError:
             conn.rollback()
             return jsonify({"error": "session already active"}), 409
-        return jsonify({"ok": True})
+        return _action_response(user_id, ts)
 
     @app.post("/api/session/resume")
     @security.login_required
@@ -124,7 +137,7 @@ def register_routes(app):
         except sqlite3.IntegrityError:
             conn.rollback()
             return jsonify({"error": "session already active"}), 409
-        return jsonify({"ok": True})
+        return _action_response(user_id, ts)
 
     @app.post("/api/session/finish")
     @security.login_required
@@ -155,7 +168,7 @@ def register_routes(app):
             conn.rollback()
             return jsonify({"error": "session state changed"}), 409
         conn.commit()
-        return jsonify({"ok": True})
+        return _action_response(user_id, ts)
 
     @app.post("/api/session/cancel")
     @security.login_required
@@ -174,7 +187,7 @@ def register_routes(app):
             conn.rollback()
             return jsonify({"error": "session state changed"}), 409
         conn.commit()
-        return jsonify({"ok": True})
+        return _action_response(user_id, db.now_ts())
 
     @app.post("/api/session/adjust")
     @security.login_required
@@ -208,8 +221,11 @@ def register_routes(app):
             conn.rollback()
             return jsonify({"error": "session state changed"}), 409
         conn.commit()
-        return jsonify(
-            {"ok": True, "removed_seconds": seconds, "remaining_seconds": available - seconds}
+        return _action_response(
+            user_id,
+            current_ts,
+            removed_seconds=seconds,
+            remaining_seconds=available - seconds,
         )
 
     @app.post("/api/session/delete")

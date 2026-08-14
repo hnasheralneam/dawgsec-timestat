@@ -29,6 +29,22 @@ Open: http://127.0.0.1:5000
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
+## Frontend build (Tailwind)
+
+`static/tailwind.css` is committed, so the server needs no Node/npm at runtime.
+It is compiled from `static/input.css` using the dev-only config in
+`tailwind.config.js` (content scanned from `templates/**/*.html`). If you add
+or change Tailwind utility classes in a template, rebuild it:
+
+```bash
+npm run css        # one-off, minified
+npm run css:watch  # rebuild on change
+```
+
+Charts (Chart.js) are lazy-loaded only on pages that render a `<canvas>`, and
+the "Material Icons Round" webfont is loaded non-blocking from Google Fonts;
+both are optional and degrade gracefully offline.
+
 ## Environment variables
 
 All supported env values are in `deploy/timestat.env.example`.

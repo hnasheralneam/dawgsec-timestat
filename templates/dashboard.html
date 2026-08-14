@@ -218,6 +218,7 @@
 
 <script>
   const currentUserId = {{ user.id }};
+  const initialData = {{ initial_data|tojson }};
   const state = {
     current: null,
     timerBase: 0,
@@ -233,7 +234,8 @@
     lastPresenceJson: null,
     collabSinceTs: null,
     collabInitialized: false,
-    shownStartNotifications: new Set()
+    shownStartNotifications: new Set(),
+    actionBusy: false
   };
 
   // formatDuration, formatHours, tsToLocal, escapeHtml, and postJson are
@@ -327,13 +329,13 @@
       showReduce = true;
     }
 
-    start.disabled = !showStart;
-    pause.disabled = !showPause;
-    resume.disabled = !showResume;
-    finish.disabled = !showFinish;
-    cancel.disabled = !showCancel;
-    reduce10.disabled = !showReduce;
-    reduce30.disabled = !showReduce;
+    start.disabled = state.actionBusy || !showStart;
+    pause.disabled = state.actionBusy || !showPause;
+    resume.disabled = state.actionBusy || !showResume;
+    finish.disabled = state.actionBusy || !showFinish;
+    cancel.disabled = state.actionBusy || !showCancel;
+    reduce10.disabled = state.actionBusy || !showReduce;
+    reduce30.disabled = state.actionBusy || !showReduce;
 
     start.classList.toggle("hidden", !showStart);
     pause.classList.toggle("hidden", !showPause);
@@ -344,15 +346,85 @@
     reduce30.classList.toggle("hidden", !showReduce);
   }
 
+  const pendingActions = [];
+  let flushingActions = false;
+
+  function isNetworkFailure(err) {
+    return err instanceof TypeError || !navigator.onLine;
+  }
+
+  async function refreshHistory() {
+    await Promise.all([loadRecent({ reset: true }), loadDailyTrend()]);
+  }
+
+  async function flushPendingActions() {
+    if (flushingActions || !pendingActions.length) return;
+    flushingActions = true;
+    try {
+      while (pendingActions.length) {
+        const action = pendingActions[0];
+        try {
+          const data = await postJson(action.url, action.body);
+          if (data.status) applyStatus(data.status);
+          if (action.history) await refreshHistory();
+          pendingActions.shift();
+          setMessage("Connection restored. Change saved.");
+        } catch (err) {
+          if (isNetworkFailure(err)) break;
+          pendingActions.shift();
+          await loadStatus().catch(() => {});
+          setMessage(err.message || "Could not save queued change.", true);
+        }
+      }
+    } finally {
+      flushingActions = false;
+    }
+  }
+
+  async function performSessionAction(url, body = {}, {
+    optimistic,
+    message,
+    history = false
+  } = {}) {
+    const snapshot = state.current ? { ...state.current } : null;
+    const timerSnapshot = state.timerBase;
+    if (optimistic) optimistic();
+    state.actionBusy = true;
+    updateButtons();
+    try {
+      const data = await postJson(url, body);
+      if (data.status) applyStatus(data.status);
+      if (history) await refreshHistory();
+      if (message) setMessage(message);
+      return data;
+    } catch (err) {
+      if (isNetworkFailure(err)) {
+        pendingActions.push({ url, body, history, snapshot, timerSnapshot });
+        setMessage("Offline. Change queued and will retry automatically.");
+        setTimeout(flushPendingActions, 3000);
+        return null;
+      }
+      state.current = snapshot;
+      state.timerBase = timerSnapshot;
+      renderSession();
+      setMessage(err.message, true);
+      flashError();
+      return null;
+    } finally {
+      state.actionBusy = false;
+      updateButtons();
+    }
+  }
+
   async function adjustSession(seconds, label) {
     if (!state.current) return;
-    try {
-      await postJson("/api/session/adjust", { seconds });
-      setMessage(`Removed ${label} from the current session.`);
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    await performSessionAction("/api/session/adjust", { seconds }, {
+      optimistic: () => {
+        state.timerBase = Math.max(0, state.timerBase - seconds);
+        renderSession();
+      },
+      message: `Removed ${label} from the current session.`
+    });
   }
 
   function renderSession() {
@@ -491,6 +563,10 @@
   }
 
   async function loadStats() {
+    // Chart.js is lazy-loaded from the same origin; awaiting here (rather
+    // than before the fetch) lets the request start immediately while the
+    // script downloads in parallel. Repeated calls share one load.
+    await window.ensureCharts().catch(() => {});
     const res = await fetch("/api/stats");
     const data = await res.json();
     applyStats(data);
@@ -558,10 +634,11 @@
   }
 
   async function loadDailyTrend() {
+    await window.ensureCharts().catch(() => {});
     const res = await fetch(`/api/users/${currentUserId}/activity-grid?days=14`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load daily trend");
-    const days = (data.days || []).map((d) => ({ ...d }));
+    const days = normalizeGrid(data);
     if (state.current && days.length) {
       // The activity-grid endpoint only totals completed sessions, so an
       // in-progress session's elapsed time is missing from today's bucket
@@ -570,6 +647,16 @@
       days[days.length - 1].seconds += state.timerBase;
     }
     renderDailyTrend(days);
+  }
+
+  function normalizeGrid(data) {
+    if (Array.isArray(data.days) && data.days.length && typeof data.days[0] === "object") {
+      return data.days.map((day) => ({ ...day }));
+    }
+    return (data.days || []).map((date, index) => ({
+      date,
+      seconds: Number(data.seconds?.[index] || 0)
+    }));
   }
 
   function getRecentFilters() {
@@ -676,9 +763,9 @@
         const sessionId = Number(btn.getAttribute("data-delete-session-id"));
         if (!await window.showAppConfirm("Delete this past session?")) return;
         try {
-          await postJson("/api/session/delete", { session_id: sessionId });
-          setMessage("Past session removed.");
-          await refreshAll();
+           await postJson("/api/session/delete", { session_id: sessionId });
+           setMessage("Past session removed.");
+           await refreshHistory();
         } catch (err) {
           setMessage(err.message, true);
         }
@@ -705,37 +792,6 @@
     state.recentHasMore = Boolean(data.has_more);
     state.recentLoadedOnce = true;
     renderRecent(state.recentSessions);
-  }
-
-  let refreshInFlight = false;
-  let refreshQueued = false;
-
-  async function refreshAll() {
-    if (refreshInFlight) {
-      // A refresh is already running (timer- or action-triggered). Queue
-      // another pass instead of firing overlapping requests that could
-      // race and let a stale response clobber a fresher one.
-      refreshQueued = true;
-      return;
-    }
-    refreshInFlight = true;
-    try {
-      await Promise.all([
-        loadStatus(),
-        loadWeeklyLeaderboard(),
-        loadStats(),
-        loadDailyTrend(),
-        loadRecent({ reset: true })
-      ]);
-    } catch (_err) {
-      setMessage("Could not refresh data.", true);
-    } finally {
-      refreshInFlight = false;
-      if (refreshQueued) {
-        refreshQueued = false;
-        refreshAll();
-      }
-    }
   }
 
   let recentSearchTimer = null;
@@ -795,9 +851,9 @@
         category_name: categoryName,
         note
       });
-      closeEditPanel();
-      setMessage("Past session updated.");
-      await refreshAll();
+       closeEditPanel();
+       setMessage("Past session updated.");
+       await refreshHistory();
     } catch (err) {
       setMessage(err.message, true);
     }
@@ -894,58 +950,70 @@
       flashError();
       return;
     }
-    try {
-      await postJson("/api/session/start", {
-        category_name: value,
-        note: document.getElementById("sessionNote").value.trim()
-      });
-      setMessage("Session started.");
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    const note = document.getElementById("sessionNote").value.trim();
+    await performSessionAction("/api/session/start", {
+      category_name: value,
+      note
+    }, {
+      optimistic: () => {
+        state.current = {
+          id: null,
+          category_name: value,
+          note,
+          status: "running",
+          elapsed_seconds: 0,
+          start_ts: Math.floor(Date.now() / 1000)
+        };
+        state.timerBase = 0;
+        renderSession();
+      },
+      message: "Session started."
+    });
   });
 
   document.getElementById("pauseBtn").addEventListener("click", async () => {
-    try {
-      await postJson("/api/session/pause");
-      setMessage("Session paused.");
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    await performSessionAction("/api/session/pause", {}, {
+      optimistic: () => {
+        if (state.current) state.current = { ...state.current, status: "paused" };
+        renderSession();
+      },
+      message: "Session paused."
+    });
   });
 
   document.getElementById("resumeBtn").addEventListener("click", async () => {
-    try {
-      await postJson("/api/session/resume");
-      setMessage("Session resumed.");
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    await performSessionAction("/api/session/resume", {}, {
+      optimistic: () => {
+        if (state.current) state.current = { ...state.current, status: "running" };
+        renderSession();
+      },
+      message: "Session resumed."
+    });
   });
 
   document.getElementById("finishBtn").addEventListener("click", async () => {
-    try {
-      await postJson("/api/session/finish");
-      setMessage("Session finished.");
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    await performSessionAction("/api/session/finish", {}, {
+      optimistic: () => {
+        state.current = null;
+        state.timerBase = 0;
+        renderSession();
+      },
+      message: "Session finished.",
+      history: true
+    });
   });
 
   document.getElementById("cancelBtn").addEventListener("click", async () => {
     if (!state.current) return;
     if (!await window.showAppConfirm("Cancel the current session? This will discard it.")) return;
-    try {
-      await postJson("/api/session/cancel");
-      setMessage("Session canceled.");
-      await refreshAll();
-    } catch (err) {
-      setMessage(err.message, true);
-    }
+    await performSessionAction("/api/session/cancel", {}, {
+      optimistic: () => {
+        state.current = null;
+        state.timerBase = 0;
+        renderSession();
+      },
+      message: "Session canceled."
+    });
   });
 
   document.getElementById("reduce10Btn").addEventListener("click", async () => {
@@ -957,11 +1025,13 @@
   });
 
   setInterval(() => {
-    if (state.current && state.current.status === "running") {
-      state.timerBase += 1;
-      document.getElementById("timerDisplay").textContent = formatDuration(state.timerBase);
-    }
+    if (document.hidden || !state.current || state.current.status !== "running") return;
+    state.timerBase += 1;
+    document.getElementById("timerDisplay").textContent = formatDuration(state.timerBase);
   }, 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadStatus().catch(() => {});
+  });
 
   // SSE live stream: replaces the 5s /api/status poll and the 30s
   // leaderboard/stats batch with a single server-pushed connection. Status
@@ -984,7 +1054,9 @@
         const digest = JSON.parse(e.data);
         state.weeklyLeaderboardLoaded = true;
         applyWeeklyLeaderboard(digest.leaderboard);
-        applyStats(digest.stats);
+        window.ensureCharts()
+          .then(() => applyStats(digest.stats))
+          .catch(() => {});
       } catch (_err) {}
     });
     stream.addEventListener("end", () => {
@@ -1003,6 +1075,10 @@
   let statusPoll = null;
   function startStatusPolling() {
     if (statusPoll) return;
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const slow = Boolean(connection && (
+      connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
+    ));
     statusPoll = setInterval(() => {
       loadStatus().catch(async (err) => {
         if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
@@ -1011,27 +1087,71 @@
         }
         setMessage("Could not refresh status.", true);
       });
-    }, 5000);
+    }, slow ? 15000 : 5000);
   }
   function stopStatusPolling() {
     if (statusPoll) { clearInterval(statusPoll); statusPoll = null; }
   }
 
-  refreshAll();
-  if (initStream()) {
-    // SSE is up; pause status polling. It resumes only on stream error.
-    let sseOpen = false;
-    stream.addEventListener("open", () => { sseOpen = true; stopStatusPolling(); });
-    stream.addEventListener("error", () => {
-      if (sseOpen) { sseOpen = false; startStatusPolling(); }
-    });
-  } else {
-    startStatusPolling();
+  function seedInitialData() {
+    applyStatus(initialData.status);
+    state.weeklyLeaderboardLoaded = true;
+    applyWeeklyLeaderboard(initialData.digest.leaderboard);
+    state.recentSessions = initialData.recent.sessions || [];
+    state.recentTotal = initialData.recent.total || state.recentSessions.length;
+    state.recentHasMore = Boolean(initialData.recent.has_more);
+    state.recentLoadedOnce = true;
+    renderRecent(state.recentSessions);
+
+    const initialDays = normalizeGrid(initialData.trend);
+    window.ensureCharts().then(() => {
+      applyStats(initialData.digest.stats);
+      const days = initialDays.map((day) => ({ ...day }));
+      if (state.current && days.length) days[days.length - 1].seconds += state.timerBase;
+      renderDailyTrend(days);
+    }).catch(() => {});
   }
+
+  async function bootstrap() {
+    // The server embeds the first snapshot, so the dashboard is useful as
+    // soon as HTML arrives. The stream only handles subsequent changes.
+    if (initialData) {
+      seedInitialData();
+    } else {
+      loadRecent({ reset: true }).catch(() => {});
+      loadDailyTrend().catch(() => {});
+      loadStatus().catch(() => {});
+    }
+
+    if (initStream()) {
+      // SSE is up; pause status polling. It resumes only on stream error.
+      let sseOpen = false;
+      stream.addEventListener("open", () => { sseOpen = true; stopStatusPolling(); });
+      stream.addEventListener("error", () => {
+        if (sseOpen) { sseOpen = false; startStatusPolling(); }
+      });
+    } else {
+      // No SSE support: fall back to polling for the live sections too.
+      startStatusPolling();
+      if (!initialData) {
+        loadWeeklyLeaderboard().catch(() => {});
+        loadStats().catch(() => {});
+      }
+    }
+  }
+
+  bootstrap();
+
   // Daily trend + recent history aren't on the SSE digest yet; poll them on a
   // slower cadence (lower frequency than before since the live data now flows
-  // over the stream).
+  // over the stream). Skipped while the tab is hidden.
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const slowConnection = Boolean(connection && (
+    connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
+  ));
+  const dashboardRefreshMs = slowConnection ? 300000 : 60000;
   setInterval(() => {
+    if (document.hidden) return;
     Promise.all([
       loadDailyTrend(),
       loadRecent({ reset: true })
@@ -1042,6 +1162,7 @@
       }
       setMessage("Could not refresh dashboard data.", true);
     });
-  }, 60000);
+  }, dashboardRefreshMs);
+  window.addEventListener("online", flushPendingActions);
 </script>
 {% endblock %}

@@ -10,7 +10,7 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 sudo mkdir -p /opt/timestat /etc/timestat
-sudo rsync -a --exclude .venv --exclude .git --exclude backups ./ /opt/timestat/
+sudo rsync -a --exclude .venv --exclude .git --exclude backups --exclude node_modules ./ /opt/timestat/
 
 (
     cd /opt/timestat

@@ -1,0 +1,12 @@
+{
+  "name": "timestat",
+  "private": true,
+  "description": "Dev-time only tooling. No runtime/build dependency on the server: the compiled static/tailwind.css is committed.",
+  "scripts": {
+    "css": "tailwindcss -i ./static/input.css -o ./static/tailwind.css --minify",
+    "css:watch": "tailwindcss -i ./static/input.css -o ./static/tailwind.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

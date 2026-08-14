@@ -1,6 +1,7 @@
 from flask import flash, redirect, render_template, url_for
 
-from services import queries
+import db
+from services import payloads, queries
 from auth import security
 
 
@@ -10,8 +11,32 @@ def register_routes(app):
     def dashboard():
         categories = queries.get_categories()
         user = queries.get_current_user()
+        current_ts = db.now_ts()
+        recent_sessions, recent_total = queries.recent_sessions_for_user(
+            user["id"], limit=10, offset=0
+        )
+        trend_rows = queries.user_activity_grid(user["id"], current_ts, days=14)
+        initial_data = {
+            "status": payloads.build_status_payload(
+                user["id"], current_ts, current_ts, pop_alert=True
+            ),
+            "digest": payloads.build_weekly_digest(user["id"], current_ts, limit=5),
+            "recent": {
+                "sessions": recent_sessions,
+                "total": recent_total,
+                "has_more": len(recent_sessions) < recent_total,
+            },
+            "trend": {
+                "days": [row["date"] for row in trend_rows],
+                "seconds": [row["seconds"] for row in trend_rows],
+            },
+        }
         return render_template(
-            "dashboard.html", categories=categories, user=user, active_page="dashboard"
+            "dashboard.html",
+            categories=categories,
+            user=user,
+            active_page="dashboard",
+            initial_data=initial_data,
         )
 
     @app.get("/weekly-leaderboard")

@@ -150,7 +150,10 @@ def register_routes(app):
         return jsonify(
             {
                 "user": {"id": target_user["id"], "username": target_user["username"]},
-                "days": grid_rows,
+                # Keep the repeated date/seconds object keys out of every row.
+                # The client reconstructs its small internal row objects.
+                "days": [row["date"] for row in grid_rows],
+                "seconds": [row["seconds"] for row in grid_rows],
                 "max_seconds": max_seconds,
             }
         )

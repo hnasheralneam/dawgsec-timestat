@@ -48,11 +48,15 @@
   let lastWeeklyLeaderboardJson = null;
 
   async function loadWeeklyLeaderboard() {
+    // Chart.js loads in parallel with the request; it only needs to be
+    // ready before rendering.
+    const fetchPromise = fetch("/api/leaderboard/weekly");
     const tbody = document.getElementById("weeklyLeaderboardBody");
     if (!weeklyLeaderboardLoadedOnce) {
       tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
-    const res = await fetch("/api/leaderboard/weekly");
+    await window.ensureCharts().catch(() => {});
+    const res = await fetchPromise;
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
     weeklyLeaderboardLoadedOnce = true;

@@ -40,6 +40,7 @@ SLEEP_STEP = 0.5
 DIGEST_EVERY = 5       # digest every 5 status ticks -> ~10s
 HEARTBEAT_EVERY = 8    # heartbeat comment every 8 status ticks -> ~16s
 MAX_TICKS = 150        # ~5min, then close so the client reconnects (re-auths)
+STATUS_RESYNC_EVERY = 15  # refresh the client-side timer about every 30s
 
 
 @contextmanager
@@ -65,6 +66,27 @@ def _encode(event_name, data):
     return f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
 
 
+def _status_signature(payload):
+    """Ignore values the browser can derive locally between state changes."""
+    stable = dict(payload)
+    stable.pop("server_ts", None)
+    current = stable.get("current_session")
+    if current:
+        current = dict(current)
+        current.pop("elapsed_seconds", None)
+        stable["current_session"] = current
+    return json.dumps(stable, sort_keys=True, separators=(",", ":"))
+
+
+def _digest_signature(payload):
+    """Ignore rolling timestamps when deciding whether a digest changed."""
+    stable = json.loads(json.dumps(payload))
+    stable.get("leaderboard", {}).pop("server_ts", None)
+    stable.get("leaderboard", {}).pop("since_ts", None)
+    stable.get("stats", {}).pop("since_ts", None)
+    return json.dumps(stable, sort_keys=True, separators=(",", ":"))
+
+
 def _sleep_responsive(total):
     """Sleep in small increments so a client disconnect is noticed promptly
     (the next ``yield`` will raise and end the generator)."""
@@ -76,6 +98,8 @@ def _sleep_responsive(total):
 
 def _generate(user_id):
     last_collab_since = None
+    last_status_signature = None
+    last_digest_signature = None
     ticks = 0
     try:
         while True:
@@ -92,16 +116,24 @@ def _generate(user_id):
                 )
                 last_collab_since = current_ts
 
-            yield _encode("status", status_payload)
             ticks += 1
+            status_signature = _status_signature(status_payload)
+            force_status = ticks % STATUS_RESYNC_EVERY == 0
+            status_sent = force_status or status_signature != last_status_signature
+            if status_sent:
+                yield _encode("status", status_payload)
+                last_status_signature = status_signature
 
             if ticks % DIGEST_EVERY == 0:
                 with _fresh_db():
                     current_ts = db.now_ts()
                     digest = payloads.build_weekly_digest(user_id, current_ts, limit=5)
-                yield _encode("digest", digest)
+                digest_signature = _digest_signature(digest)
+                if digest_signature != last_digest_signature:
+                    yield _encode("digest", digest)
+                    last_digest_signature = digest_signature
 
-            if ticks % HEARTBEAT_EVERY == 0:
+            if ticks % HEARTBEAT_EVERY == 0 and not status_sent:
                 yield f": heartbeat {ticks}\n\n"
 
             if ticks >= MAX_TICKS:

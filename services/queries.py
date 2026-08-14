@@ -101,7 +101,6 @@ def collaborator_presence_rows(current_ts: int, exclude_user_id: int):
             "note": row["note"] or "",
             "status": row["status"],
             "start_ts": row["start_ts"],
-            "elapsed_seconds": helpers.elapsed_seconds(row, current_ts),
         }
         for row in rows
     ]

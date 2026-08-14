@@ -7,3 +7,6 @@ timestat.db-shm
 backups/
 venv/
 .env
+node_modules/
+.pytest_cache/
+.claude/

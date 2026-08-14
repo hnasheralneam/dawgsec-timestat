@@ -8,12 +8,16 @@
 //     cached copy of the dashboard shell so a reload while offline still works.
 //   * Everything else (API, SSE, auth POSTs) -> passthrough; never cached.
 
-const CACHE_VERSION = "timestat-cache-v2";
+const CACHE_VERSION = "timestat-cache-v5";
 const CORE_ASSETS = [
   "/static/style.css",
+  "/static/tailwind.css",
   "/static/js/common.js",
+  "/static/js/theme.js",
   "/static/manifest.json",
   "/static/logo.svg",
+  "/static/fonts/material-symbols-rounded.woff2",
+  "/static/vendor/chart.umd.min.js",
 ];
 
 self.addEventListener("install", (event) => {

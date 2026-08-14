@@ -175,6 +175,16 @@
     return `rgb(var(--gb-green-rgb) / ${levels[3]})`;
   }
 
+  function normalizeGrid(data) {
+    if (Array.isArray(data.days) && data.days.length && typeof data.days[0] === "object") {
+      return data.days.map((day) => ({ ...day }));
+    }
+    return (data.days || []).map((date, index) => ({
+      date,
+      seconds: Number(data.seconds?.[index] || 0)
+    }));
+  }
+
   function paintActivityLegend() {
     const levels = activityAlphas();
     const colors = [
@@ -478,24 +488,27 @@
   }
 
   async function loadPageData() {
-    const [statsRes, activityRes, trendRes] = await Promise.all([
+    // Start the data requests immediately; Chart.js loads in parallel
+    // instead of gating them (it only needs to be ready before rendering).
+    const fetches = Promise.all([
       fetch(`/api/users/${targetUserId}/stats`),
-      fetch(`/api/users/${targetUserId}/activity-grid?days=140`),
-      fetch(`/api/users/${targetUserId}/activity-grid?days=14`)
+      fetch(`/api/users/${targetUserId}/activity-grid?days=140`)
     ]);
+    await window.ensureCharts().catch(() => {});
+    const [statsRes, activityRes] = await fetches;
 
     const statsData = await statsRes.json();
     const activityData = await activityRes.json();
-    const trendData = await trendRes.json();
 
     if (!statsRes.ok) throw new Error(statsData.error || "Could not load profile stats");
     if (!activityRes.ok) throw new Error(activityData.error || "Could not load activity grid");
-    if (!trendRes.ok) throw new Error(trendData.error || "Could not load daily trend");
 
     renderCategoryChart(statsData.categories || []);
-    state.activityDays = activityData.days || [];
+    state.activityDays = normalizeGrid(activityData);
     state.activityMaxSeconds = activityData.max_seconds || 0;
-    renderDailyTrend(trendData.days || []);
+    // The 14-day trend is the tail of the 140-day grid (the endpoint always
+    // ends on today), so slice it locally instead of a second API call.
+    renderDailyTrend(state.activityDays.slice(-14));
     await loadRecent({ reset: true });
     paintActivityLegend();
     renderActivityGrid(state.activityDays, state.activityMaxSeconds);

@@ -177,7 +177,11 @@
   }
 
   async function loadAnalytics() {
-    const res = await fetch("/admin/api/analytics");
+    // Fetch and Chart.js load race in parallel; charts are only needed
+    // once the data arrives.
+    const resPromise = fetch("/admin/api/analytics");
+    await window.ensureCharts().catch(() => {});
+    const res = await resPromise;
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load analytics");
 

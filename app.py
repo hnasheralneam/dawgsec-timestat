@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 import sys
+import gzip
 from datetime import timedelta
 
 from flask import Flask, flash, jsonify, redirect, request, session, url_for
@@ -158,16 +159,76 @@ def create_app() -> Flask:
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault(
             "Content-Security-Policy",
+            # All frontend assets (including Chart.js and the icon font) are
+            # self-hosted, so no third-party origins are needed. 'unsafe-inline'
+            # remains for the per-page inline <script> blocks and Tailwind.
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-            "font-src 'self' https://fonts.gstatic.com; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "font-src 'self'; "
             "img-src 'self' data:; "
             "connect-src 'self'; "
             "base-uri 'self'; "
             "form-action 'self'; "
             "frame-ancestors 'none'; "
             "object-src 'none'",
+        )
+        if request.path.startswith("/static/"):
+            # Static assets are content-addressed-ish (bumped together with the
+            # service-worker cache version); a long cache helps repeat visits
+            # while the service worker revalidates in the background.
+            response.headers.setdefault("Cache-Control", "public, max-age=86400")
+        return response
+
+    @app.after_request
+    def compress_response(response):
+        """Compress sizeable text responses when the client supports gzip.
+
+        SSE must remain uncompressed and flushable. Binary assets such as the
+        local font are already compressed, while JSON and HTML benefit greatly
+        on slow links without adding a runtime dependency.
+        """
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+        if response.headers.get("Content-Encoding"):
+            return response
+        if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+            return response
+
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+        if content_type == "text/event-stream":
+            return response
+        if content_type not in {
+            "application/json",
+            "application/javascript",
+            "text/javascript",
+            "text/css",
+            "text/html",
+            "text/plain",
+            "image/svg+xml",
+        }:
+            return response
+
+        # get_data() materializes a response. The allowlist above excludes the
+        # streaming endpoint, and the remaining responses are bounded assets
+        # or API/template bodies.
+        if response.direct_passthrough:
+            response.direct_passthrough = False
+        body = response.get_data()
+        if len(body) < 500:
+            return response
+        compressed = gzip.compress(body, compresslevel=6)
+        if len(compressed) >= len(body):
+            return response
+        response.set_data(compressed)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(compressed))
+        # The original send_file ETag identifies the uncompressed bytes.
+        response.headers.pop("ETag", None)
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = (
+            f"{vary}, Accept-Encoding" if vary and "accept-encoding" not in vary.lower()
+            else vary or "Accept-Encoding"
         )
         return response
 

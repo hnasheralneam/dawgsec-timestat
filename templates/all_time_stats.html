@@ -131,6 +131,9 @@
   }
 
   async function loadStats() {
+    // Chart.js loads in parallel with the request; it only needs to be
+    // ready before rendering.
+    await window.ensureCharts().catch(() => {});
     const res = await fetch("/api/stats");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load stats");
@@ -160,7 +163,29 @@
     await Promise.all([loadLeaderboard(), loadStats()]);
   }
 
-  refreshAll();
-  setInterval(refreshAll, 5000);
+  // All-time data changes rarely; poll on a slow, visibility-aware cadence and
+  // refresh immediately when the tab regains focus.
+  let refreshInFlight = false;
+  async function scheduledRefresh() {
+    if (document.hidden || refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      await refreshAll();
+    } catch (_err) {
+      // transient failure: next tick or re-focus will retry
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const slowConnection = Boolean(connection && (
+    connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
+  ));
+  setInterval(scheduledRefresh, slowConnection ? 300000 : 30000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduledRefresh();
+  });
+
+  refreshAll().catch(() => {});
 </script>
 {% endblock %}
