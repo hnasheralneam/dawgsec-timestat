@@ -80,14 +80,33 @@ body {
   border-radius: 0.85rem;
   padding: 0.55rem 1rem;
   font-weight: 600;
+  background: rgb(var(--gb-bg1-rgb));
+  color: rgb(var(--gb-fg-rgb));
   border: 1px solid transparent;
+  border-color: rgb(var(--gb-bg2-rgb));
   box-shadow: 6px 6px 12px rgb(var(--gb-shadow-rgb)), -6px -6px 12px rgb(var(--gb-highlight-rgb) / 0.55);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+/* Keep ordinary controls and navigation quiet; data visualizations and
+   explicit status/error messages retain their semantic colors. */
+a.text-gb-blue,
+a.text-gb-green,
+a.text-gb-purple,
+a.text-gb-blue:hover,
+a.text-gb-green:hover,
+a.text-gb-purple:hover {
+  color: rgb(var(--gb-fg-rgb));
 }
 
 .neu-btn:hover {
   filter: brightness(1.03);
   transform: translateY(-1px);
+}
+
+header .neu-btn {
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
 }
 
 .neu-btn:active {
