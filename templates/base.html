@@ -67,7 +67,7 @@
   <script src="{{ url_for('static', filename='js/common.js') }}" onerror="window.__timestatCommonLoadFailed = true;"></script>
 </head>
 <body class="min-h-screen">
-  <div class="max-w-6xl mx-auto px-4 py-6">
+  <div class="app-shell max-w-6xl mx-auto px-4 py-6">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <div class="space-y-2 mb-4">
@@ -83,7 +83,7 @@
 
     {% block header %}
     {% if user or is_admin %}
-    <header class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <header class="mobile-header flex flex-wrap items-center justify-between gap-3 mb-5 {{ 'dashboard-header' if active_page == 'dashboard' else '' }}">
       <div>
         <h1 class="text-2xl font-semibold text-gb-fg flex items-center gap-2">
           <span class="material-symbols-rounded" aria-hidden="true">{% block header_icon %}dashboard{% endblock %}</span>
@@ -91,54 +91,60 @@
         </h1>
         <p class="text-sm text-gb-fg/75">{% block header_subtitle %}{% endblock %}</p>
       </div>
-      <div class="flex items-center flex-wrap gap-2">
+      <div class="mobile-tab-nav flex items-center flex-wrap gap-2">
         {% block header_nav %}
           {% if user %}
             {% if active_page != "dashboard" %}
             <a href="{{ url_for('dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="Dashboard" data-tooltip="Dashboard">
               <span class="material-symbols-rounded" aria-hidden="true">dashboard</span>
-              <span class="hidden md:inline text-xs font-semibold">Dashboard</span>
+              <span class="desktop-nav-label hidden md:inline text-xs font-semibold">Dashboard</span>
             </a>
             {% endif %}
             {% if active_page != "weekly_leaderboard" %}
             <a href="{{ url_for('weekly_leaderboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="Weekly leaderboard" data-tooltip="Weekly leaderboard">
               <span class="material-symbols-rounded" aria-hidden="true">leaderboard</span>
-              <span class="hidden md:inline text-xs font-semibold">Leaderboard</span>
+              <span class="desktop-nav-label hidden md:inline text-xs font-semibold">Leaderboard</span>
             </a>
             {% endif %}
             {% if active_page != "all_time_stats" %}
             <a href="{{ url_for('all_time_stats') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg px-2 py-2 inline-flex items-center justify-center gap-1" aria-label="All-time stats" data-tooltip="All-time stats">
               <span class="material-symbols-rounded" aria-hidden="true">insights</span>
-              <span class="hidden md:inline text-xs font-semibold">All-time</span>
+              <span class="desktop-nav-label hidden md:inline text-xs font-semibold">All-time</span>
             </a>
             {% endif %}
             <button id="openSettingsBtn" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" type="button" aria-label="Account settings" data-tooltip="Account settings">
               <span class="material-symbols-rounded" aria-hidden="true">settings</span>
+              <span class="mobile-tab-label">Settings</span>
             </button>
           {% endif %}
           {% if is_admin and active_page != "admin_dashboard" %}
           <a href="{{ url_for('admin_dashboard') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" aria-label="Admin dashboard" data-tooltip="Admin dashboard">
             <span class="material-symbols-rounded" aria-hidden="true">admin_panel_settings</span>
+            <span class="mobile-tab-label">Admin</span>
           </a>
           {% endif %}
           {% if is_admin and active_page != "admin_analytics" %}
           <a href="{{ url_for('admin_analytics') }}" class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg p-2 inline-flex items-center justify-center" aria-label="Team analytics" data-tooltip="Team analytics">
             <span class="material-symbols-rounded" aria-hidden="true">analytics</span>
+            <span class="mobile-tab-label">Analytics</span>
           </a>
           {% endif %}
           <button class="theme-toggle neu-btn text-gb-fg border-gb-bg2 bg-gb-bg1 p-2 inline-flex items-center justify-center" data-tooltip="Switch to dark mode" aria-label="Switch to dark mode" type="button">
             <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
+            <span class="mobile-tab-label">Theme</span>
           </button>
           {% if user %}
           <form action="{{ url_for('logout') }}" method="post">
             <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" aria-label="Sign out" data-tooltip="Sign out">
               <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+              <span class="mobile-tab-label">Sign out</span>
             </button>
           </form>
           {% elif is_admin %}
           <form action="{{ url_for('admin_logout') }}" method="post">
             <button class="neu-btn bg-gb-red text-gb-bg0 border-gb-red/80 p-2 inline-flex items-center justify-center" type="submit" aria-label="Admin sign out" data-tooltip="Admin sign out">
               <span class="material-symbols-rounded" aria-hidden="true">logout</span>
+              <span class="mobile-tab-label">Sign out</span>
             </button>
           </form>
           {% endif %}
@@ -286,7 +292,7 @@
 
     {% block content %}{% endblock %}
     {% block footer %}
-    <footer class="mt-10 mb-2 text-center text-xs text-gb-fg/75">
+    <footer class="app-footer mt-10 mb-2 text-center text-xs text-gb-fg/75">
       Check out the code on <a href="https://github.com/hnasheralneam/dawgsec-timestat" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">GitHub</a>
       <span class="mx-2">&middot;</span>
       Made with ❤️ by <a href="https://hnasheralneam.dev" class="hover:text-gb-blue underline decoration-dotted underline-offset-2" target="_blank" rel="noopener noreferrer">Hamza</a>
