@@ -434,5 +434,124 @@ class AdminAnalyticsTests(TimeStatTestCase):
         self.assertIn("/admin/login", resp.headers.get("Location", ""))
 
 
+class AdminSessionControlTests(TimeStatTestCase):
+    def _admin_login(self):
+        login_page = self.client.get("/admin/login")
+        csrf = extract_csrf(login_page.data)
+        self.client.post(
+            "/admin/login",
+            data={"code": "test-admin-code-12345", "csrf_token": csrf},
+            follow_redirects=False,
+        )
+        dashboard = self.client.get("/admin")
+        return extract_csrf(dashboard.data)
+
+    def _start_session_for(self, username: str) -> int:
+        self._register(username)
+        page = self.client.get("/dashboard")
+        csrf = extract_csrf(page.data)
+        self.client.post(
+            "/api/session/start",
+            json={"category_name": "Other", "note": "work"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM users WHERE username = ?", (username,)
+            ).fetchone()
+        return int(row[0])
+
+    def test_admin_can_pause_and_finish_a_users_active_session(self):
+        user_id = self._start_session_for("worker1")
+        # Logging in as admin clears the previous (worker1) session cookie -
+        # acting on worker1's session from here on is purely admin-side.
+        admin_csrf = self._admin_login()
+
+        pause_resp = self.client.post(
+            f"/admin/api/users/{user_id}/session/pause",
+            headers={"X-CSRF-Token": admin_csrf},
+        )
+        self.assertEqual(pause_resp.status_code, 200)
+        self.assertEqual(pause_resp.get_json()["status"], "paused")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM sessions WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        self.assertEqual(row[0], "paused")
+
+        # Pausing an already-paused session is rejected, not a silent no-op.
+        repeat_pause = self.client.post(
+            f"/admin/api/users/{user_id}/session/pause",
+            headers={"X-CSRF-Token": admin_csrf},
+        )
+        self.assertEqual(repeat_pause.status_code, 400)
+
+        finish_resp = self.client.post(
+            f"/admin/api/users/{user_id}/session/finish",
+            headers={"X-CSRF-Token": admin_csrf},
+        )
+        self.assertEqual(finish_resp.status_code, 200)
+        self.assertEqual(finish_resp.get_json()["status"], "completed")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT status, end_ts FROM sessions WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        self.assertEqual(row[0], "completed")
+        self.assertIsNotNone(row[1])
+
+        # Nothing left to finish now.
+        repeat_finish = self.client.post(
+            f"/admin/api/users/{user_id}/session/finish",
+            headers={"X-CSRF-Token": admin_csrf},
+        )
+        self.assertEqual(repeat_finish.status_code, 400)
+
+    def test_admin_finish_accounts_for_time_already_paused(self):
+        user_id = self._start_session_for("worker2")
+        with sqlite3.connect(self.db_path) as conn:
+            now = int(time.time())
+            conn.execute(
+                """
+                UPDATE sessions SET start_ts = ?, status = 'paused', pause_started_ts = ?
+                WHERE user_id = ?
+                """,
+                (now - 120, now - 30, user_id),
+            )
+            conn.commit()
+
+        admin_csrf = self._admin_login()
+        resp = self.client.post(
+            f"/admin/api/users/{user_id}/session/finish",
+            headers={"X-CSRF-Token": admin_csrf},
+        )
+        self.assertEqual(resp.status_code, 200)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT paused_seconds FROM sessions WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        # paused_seconds must include the time spent paused right up to the
+        # finish, not just whatever it was when the session was last paused.
+        self.assertGreaterEqual(row[0], 30)
+
+    def test_session_controls_blocked_for_non_admin(self):
+        user_id = self._start_session_for("worker3")
+        self.assertTrue(user_id)
+        # Log worker3 out before registering a second user - /register
+        # redirects an already-logged-in session straight to /dashboard.
+        page = self.client.get("/dashboard")
+        self._logout(extract_csrf(page.data))
+        # A different, non-admin user must not be able to pause/finish
+        # someone else's session via these endpoints.
+        self._register("bystander")
+        page = self.client.get("/dashboard")
+        csrf = extract_csrf(page.data)
+        resp = self.client.post(
+            f"/admin/api/users/{user_id}/session/pause",
+            headers={"X-CSRF-Token": csrf},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/admin/login", resp.headers.get("Location", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

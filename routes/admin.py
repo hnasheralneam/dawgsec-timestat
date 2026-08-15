@@ -66,7 +66,12 @@ def register_routes(app):
                 u.created_ts,
                 COUNT(s.id) AS task_count,
                 SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
-                SUM(CASE WHEN s.status IN ('running', 'paused') THEN 1 ELSE 0 END) AS active_count
+                SUM(CASE WHEN s.status IN ('running', 'paused') THEN 1 ELSE 0 END) AS active_count,
+                (
+                    SELECT status FROM sessions
+                    WHERE user_id = u.id AND status IN ('running', 'paused')
+                    ORDER BY id DESC LIMIT 1
+                ) AS active_status
             FROM users u
             LEFT JOIN sessions s ON s.user_id = u.id
             GROUP BY u.id
@@ -81,6 +86,7 @@ def register_routes(app):
                 "task_count": int(row["task_count"] or 0),
                 "completed_count": int(row["completed_count"] or 0),
                 "active_count": int(row["active_count"] or 0),
+                "active_status": row["active_status"],
             }
             for row in rows
         ]
@@ -141,6 +147,69 @@ def register_routes(app):
         conn.commit()
         flash(f"Removed category '{category['name']}' from available task options.", "success")
         return redirect(url_for("admin_dashboard"))
+
+    @app.post("/admin/api/users/<int:user_id>/session/pause")
+    @security.admin_required
+    def admin_pause_user_session(user_id: int):
+        conn = db.get_db()
+        target_user = conn.execute(
+            "SELECT id FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not target_user:
+            return jsonify({"error": "User not found"}), 404
+
+        active = queries.get_active_session(user_id)
+        if not active or active["status"] != "running":
+            return jsonify({"error": "No running session to pause"}), 400
+
+        ts = db.now_ts()
+        cur = conn.execute(
+            "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ? AND status = 'running'",
+            (ts, active["id"]),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"error": "session state changed"}), 409
+        conn.commit()
+        live_cache.invalidate()
+        return jsonify({"ok": True, "status": "paused"})
+
+    @app.post("/admin/api/users/<int:user_id>/session/finish")
+    @security.admin_required
+    def admin_finish_user_session(user_id: int):
+        conn = db.get_db()
+        target_user = conn.execute(
+            "SELECT id FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not target_user:
+            return jsonify({"error": "User not found"}), 404
+
+        active = queries.get_active_session(user_id)
+        if not active:
+            return jsonify({"error": "No active session to finish"}), 400
+
+        ts = db.now_ts()
+        paused_seconds = int(active["paused_seconds"])
+        if active["status"] == "paused" and active["pause_started_ts"] is not None:
+            paused_seconds += ts - int(active["pause_started_ts"])
+
+        cur = conn.execute(
+            """
+            UPDATE sessions
+            SET status = 'completed',
+                end_ts = ?,
+                paused_seconds = ?,
+                pause_started_ts = NULL
+            WHERE id = ? AND status IN ('running', 'paused')
+            """,
+            (ts, paused_seconds, active["id"]),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"error": "session state changed"}), 409
+        conn.commit()
+        live_cache.invalidate()
+        return jsonify({"ok": True, "status": "completed"})
 
     @app.get("/admin/api/users/<int:user_id>/tasks")
     @security.admin_required

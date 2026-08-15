@@ -38,7 +38,7 @@
       </thead>
       <tbody>
         {% for row in users %}
-        <tr class="border-t border-gb-bg2" data-user-row-id="{{ row.id }}">
+        <tr class="border-t border-gb-bg2" data-user-row-id="{{ row.id }}" data-active-status="{{ row.active_status or '' }}">
           <td class="py-2" data-label="User">
             <a href="{{ url_for('user_profile', user_id=row.id) }}" class="inline-flex items-center gap-1 font-medium text-gb-blue hover:text-gb-purple">
               <span class="material-symbols-rounded" aria-hidden="true">person</span>
@@ -50,6 +50,26 @@
           <td class="py-2" data-label="Active" data-count-role="active">{{ row.active_count }}</td>
           <td class="py-2" data-label="Actions">
             <div class="flex flex-wrap gap-2 justify-end md:justify-start">
+              <button
+                class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 {% if row.active_status != 'running' %}hidden{% endif %}"
+                type="button"
+                data-pause-session-user-id="{{ row.id }}"
+                data-pause-session-username="{{ row.username|e }}"
+                data-tooltip="Pause {{ row.username|e }}'s active session"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">pause</span>
+                Pause
+              </button>
+              <button
+                class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1 {% if not row.active_status %}hidden{% endif %}"
+                type="button"
+                data-finish-session-user-id="{{ row.id }}"
+                data-finish-session-username="{{ row.username|e }}"
+                data-tooltip="Finish {{ row.username|e }}'s active session"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">stop_circle</span>
+                Finish
+              </button>
               <button
                 class="neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg inline-flex items-center gap-1 text-xs px-2 py-1"
                 type="button"
@@ -354,6 +374,66 @@
       const userId = Number(btn.getAttribute("data-manage-tasks-user-id"));
       const username = btn.getAttribute("data-manage-tasks-username") || "";
       loadUserTasks(userId, username);
+    });
+  });
+
+  // Reflects a session status change (from pausing/finishing a user's
+  // active run) in that row's controls and "Active" count, without a full
+  // page reload.
+  function applyUserRowSessionStatus(userId, newStatus) {
+    const row = document.querySelector(`tr[data-user-row-id="${userId}"]`);
+    if (!row) return;
+    const previousStatus = row.getAttribute("data-active-status") || "";
+    row.setAttribute("data-active-status", newStatus || "");
+
+    const pauseBtn = row.querySelector(`[data-pause-session-user-id="${userId}"]`);
+    const finishBtn = row.querySelector(`[data-finish-session-user-id="${userId}"]`);
+    if (pauseBtn) pauseBtn.classList.toggle("hidden", newStatus !== "running");
+    if (finishBtn) finishBtn.classList.toggle("hidden", !newStatus);
+
+    if (previousStatus && !newStatus) {
+      // Went from having an active session to not having one (finished).
+      const activeCell = row.querySelector('[data-count-role="active"]');
+      const completedCell = row.querySelector('[data-count-role="completed"]');
+      if (activeCell) activeCell.textContent = String(Math.max(0, Number(activeCell.textContent || 0) - 1));
+      if (completedCell) completedCell.textContent = String(Number(completedCell.textContent || 0) + 1);
+    }
+  }
+
+  document.querySelectorAll("[data-pause-session-user-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (btn.disabled) return;
+      const userId = Number(btn.getAttribute("data-pause-session-user-id"));
+      const username = btn.getAttribute("data-pause-session-username") || "this user";
+      btn.disabled = true;
+      try {
+        const data = await postJson(`/admin/api/users/${userId}/session/pause`);
+        applyUserRowSessionStatus(userId, data.status);
+        window.showToast(`Paused ${username}'s active session.`);
+      } catch (err) {
+        window.showToast(err.message || "Could not pause that session.", true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-finish-session-user-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (btn.disabled) return;
+      const userId = Number(btn.getAttribute("data-finish-session-user-id"));
+      const username = btn.getAttribute("data-finish-session-username") || "this user";
+      if (!await window.showAppConfirm(`Finish ${username}'s active session now? This ends it immediately at the current elapsed time.`)) return;
+      btn.disabled = true;
+      try {
+        const data = await postJson(`/admin/api/users/${userId}/session/finish`);
+        applyUserRowSessionStatus(userId, null);
+        window.showToast(`Finished ${username}'s active session.`);
+      } catch (err) {
+        window.showToast(err.message || "Could not finish that session.", true);
+      } finally {
+        btn.disabled = false;
+      }
     });
   });
 
