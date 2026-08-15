@@ -234,6 +234,92 @@ class AtomicTransitionTests(TimeStatTestCase):
             )
         self.assertEqual(resp.status_code, 409)
 
+    def test_concurrent_adjust_same_status_is_rejected(self):
+        """Two adjusts racing against the same stale elapsed value must not
+        both apply. Before the paused_seconds optimistic-lock fix, this
+        endpoint was guarded only by `status IN (...)`, so a second adjust
+        reading the same pre-first-adjust snapshot (e.g. an offline-queue
+        retry racing a fresh click) would pass validation and double-apply,
+        over-subtracting and corrupting the session's duration."""
+        self._register("racer3")
+        page = self.client.get("/dashboard")
+        csrf = extract_csrf(page.data)
+        self.client.post(
+            "/api/session/start",
+            json={"category_name": "Other", "note": "race"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        session_id = self._active_session_id()
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            # Backdate start so there's plenty of elapsed time for two adjusts.
+            conn.execute("UPDATE sessions SET start_ts=? WHERE id=?", (now - 3600, session_id))
+            conn.commit()
+            conn.row_factory = sqlite3.Row
+            stale = conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+
+        # First adjust applies for real, moving paused_seconds to 60.
+        resp1 = self.client.post(
+            "/api/session/adjust",
+            json={"seconds": 60},
+            headers={"X-CSRF-Token": csrf},
+        )
+        self.assertEqual(resp1.status_code, 200)
+
+        # Second adjust races against the *stale* pre-first-adjust snapshot
+        # (paused_seconds still 0) - simulating a concurrent request that
+        # read state before the first adjust committed.
+        with patch.object(queries, "get_active_session", return_value=stale):
+            resp2 = self.client.post(
+                "/api/session/adjust",
+                json={"seconds": 60},
+                headers={"X-CSRF-Token": csrf},
+            )
+        self.assertEqual(resp2.status_code, 409)
+
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT paused_seconds FROM sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        # Only the first adjust's 60s applied - not 120 from a double-apply.
+        self.assertEqual(row[0], 60)
+
+
+class AutoPauseAlertTests(TimeStatTestCase):
+    def test_auto_pause_alert_delivered_exactly_once(self):
+        """The auto-pause alert is a DB-backed atomic claim
+        (auto_pause_pending_alert), not a one-shot Flask-session cookie
+        flag, specifically so it survives being read from an SSE response
+        (whose cookie writes don't reliably persist). Two reads right after
+        the auto-pause transition (simulating a REST poll landing alongside
+        an SSE tick) must show the alert exactly once between them, not
+        zero times (lost) or twice (a stale re-delivery)."""
+        self._register("sleepy")
+        page = self.client.get("/dashboard")
+        csrf = extract_csrf(page.data)
+        self.client.post(
+            "/api/session/start",
+            json={"category_name": "Other", "note": "long haul"},
+            headers={"X-CSRF-Token": csrf},
+        )
+        session_id = self._active_session_id()
+        now = int(time.time())
+        limit_seconds = config.MAX_SESSION_RUNNING_HOURS * 3600
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE sessions SET start_ts=? WHERE id=?",
+                (now - limit_seconds - 60, session_id),
+            )
+            conn.commit()
+
+        first = self.client.get("/api/status").get_json()
+        second = self.client.get("/api/status").get_json()
+
+        self.assertEqual(first["current_session"]["status"], "paused")
+        self.assertEqual(second["current_session"]["status"], "paused")
+        self.assertTrue(first["auto_paused_alert"])
+        self.assertFalse(second["auto_paused_alert"])
+
 
 class WindowedAggregationParityTests(TimeStatTestCase):
     def test_weekly_leaderboard_matches_proration_helper(self):

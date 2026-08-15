@@ -176,7 +176,20 @@ window.TimestatPalette = (function () {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
       body: JSON.stringify({ palette, custom_color: color }),
-    }).catch(() => {});
+    })
+      .then((res) => {
+        // Applied locally regardless (below), but the server is the source
+        // of truth for other devices/logins - tell the user if it didn't
+        // actually persist instead of leaving it looking saved.
+        if (!res.ok && typeof window.showToast === "function") {
+          window.showToast("Couldn't save your theme choice. It may revert next time you sign in.", true);
+        }
+      })
+      .catch(() => {
+        if (typeof window.showToast === "function") {
+          window.showToast("Couldn't save your theme choice. It may revert next time you sign in.", true);
+        }
+      });
   }
 
   function apply(isDark) {
@@ -184,14 +197,20 @@ window.TimestatPalette = (function () {
     const root = document.documentElement.style;
     if (palette === "gruvbox") {
       VAR_NAMES.forEach((name) => root.removeProperty(name));
-      return;
+    } else {
+      const vars = palette === "custom" ? generateCustomVars(color, isDark) : presetVars(palette, isDark);
+      if (!vars) {
+        VAR_NAMES.forEach((name) => root.removeProperty(name));
+      } else {
+        Object.entries(vars).forEach(([name, value]) => root.setProperty(name, value));
+      }
     }
-    const vars = palette === "custom" ? generateCustomVars(color, isDark) : presetVars(palette, isDark);
-    if (!vars) {
-      VAR_NAMES.forEach((name) => root.removeProperty(name));
-      return;
-    }
-    Object.entries(vars).forEach(([name, value]) => root.setProperty(name, value));
+    // Single choke point for every theme/palette change (toggle clicks,
+    // settings-modal swatch picks, and cross-tab sync all route through
+    // here) - pages with charts listen for this to force a repaint, since
+    // Chart.js instances otherwise only redraw when the underlying data
+    // changes, not when just the color palette does.
+    window.dispatchEvent(new Event("timestat:theme-changed"));
   }
 
   function setPalette(name) {

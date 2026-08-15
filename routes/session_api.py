@@ -19,11 +19,27 @@ def _action_response(user_id: int, current_ts: int, **extra):
     # Keep the small legacy response for non-dashboard clients while allowing
     # the current client to avoid a follow-up status request.
     if request.headers.get("X-TimeStat-Client-State") == "1":
-        payload["status"] = payloads.build_status_payload(
-            user_id, current_ts, current_ts, pop_alert=True
-        )
+        payload["status"] = payloads.build_status_payload(user_id, current_ts, current_ts)
     payload.update(extra)
     return jsonify(payload)
+
+
+def _session_id_mismatch(payload: dict, active) -> bool:
+    """Optional identity guard: pause/resume/finish/cancel/adjust all target
+    "the caller's current active session" server-side, not a client-supplied
+    id. A mutation queued client-side while offline and replayed later could
+    otherwise silently apply to a different session than the one it was
+    issued against, if the original session ended and a new one started in
+    the meantime. Callers may include the session id they intended to act
+    on; if they do and it no longer matches, reject the same way a status
+    race already does. Omitting it entirely skips this check (backward
+    compatible with any non-dashboard client)."""
+    session_id = payload.get("session_id")
+    if session_id is None:
+        return False
+    if not isinstance(session_id, int) or isinstance(session_id, bool):
+        return True
+    return session_id != active["id"]
 
 
 def register_routes(app):
@@ -44,7 +60,7 @@ def register_routes(app):
             min(collab_since_ts, current_ts),
         )
         return jsonify(
-            payloads.build_status_payload(user_id, current_ts, collab_since_ts, pop_alert=True)
+            payloads.build_status_payload(user_id, current_ts, collab_since_ts)
         )
 
     @app.post("/api/session/start")
@@ -89,10 +105,13 @@ def register_routes(app):
     @app.post("/api/session/pause")
     @security.login_required
     def api_pause_session():
+        payload = request.get_json(silent=True) or {}
         user_id = int(session["user_id"])
         active = queries.get_active_session(user_id)
         if not active or active["status"] != "running":
             return jsonify({"error": "No running session to pause"}), 400
+        if _session_id_mismatch(payload, active):
+            return jsonify({"error": "session state changed"}), 409
 
         ts = db.now_ts()
         conn = db.get_db()
@@ -113,10 +132,13 @@ def register_routes(app):
     @app.post("/api/session/resume")
     @security.login_required
     def api_resume_session():
+        payload = request.get_json(silent=True) or {}
         user_id = int(session["user_id"])
         active = queries.get_active_session(user_id)
         if not active or active["status"] != "paused":
             return jsonify({"error": "No paused session to resume"}), 400
+        if _session_id_mismatch(payload, active):
+            return jsonify({"error": "session state changed"}), 409
 
         ts = db.now_ts()
         extra_paused = ts - int(active["pause_started_ts"] or ts)
@@ -144,10 +166,13 @@ def register_routes(app):
     @app.post("/api/session/finish")
     @security.login_required
     def api_finish_session():
+        payload = request.get_json(silent=True) or {}
         user_id = int(session["user_id"])
         active = queries.get_active_session(user_id)
         if not active:
             return jsonify({"error": "No active session to finish"}), 400
+        if _session_id_mismatch(payload, active):
+            return jsonify({"error": "session state changed"}), 409
 
         ts = db.now_ts()
         paused_seconds = int(active["paused_seconds"])
@@ -175,10 +200,13 @@ def register_routes(app):
     @app.post("/api/session/cancel")
     @security.login_required
     def api_cancel_session():
+        payload = request.get_json(silent=True) or {}
         user_id = int(session["user_id"])
         active = queries.get_active_session(user_id)
         if not active:
             return jsonify({"error": "No active session to cancel"}), 400
+        if _session_id_mismatch(payload, active):
+            return jsonify({"error": "session state changed"}), 409
 
         conn = db.get_db()
         cur = conn.execute(
@@ -205,6 +233,8 @@ def register_routes(app):
         active = queries.get_active_session(user_id)
         if not active:
             return jsonify({"error": "No active session to adjust"}), 400
+        if _session_id_mismatch(payload, active):
+            return jsonify({"error": "session state changed"}), 409
 
         current_ts = db.now_ts()
         available = helpers.elapsed_seconds(active, current_ts)
@@ -216,10 +246,19 @@ def register_routes(app):
 
         conn = db.get_db()
         cur = conn.execute(
-            "UPDATE sessions SET paused_seconds = paused_seconds + ? WHERE id = ? AND status IN ('running', 'paused')",
-            (seconds, active["id"]),
+            """
+            UPDATE sessions SET paused_seconds = paused_seconds + ?
+            WHERE id = ? AND status IN ('running', 'paused') AND paused_seconds = ?
+            """,
+            (seconds, active["id"], active["paused_seconds"]),
         )
         if cur.rowcount == 0:
+            # Either the status changed, or paused_seconds itself moved since
+            # we read `active` (a concurrent adjust on the same session,
+            # e.g. two devices or an offline-queue retry racing a fresh
+            # click) - without this check both could pass the `available`
+            # validation above against the same stale value and both apply,
+            # over-subtracting and corrupting the session's duration.
             conn.rollback()
             return jsonify({"error": "session state changed"}), 409
         conn.commit()

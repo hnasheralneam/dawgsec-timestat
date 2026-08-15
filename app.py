@@ -3,9 +3,11 @@ import os
 import secrets
 import sys
 import gzip
+import time
 from datetime import timedelta
 
 from flask import Flask, flash, jsonify, redirect, request, session, url_for
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
@@ -27,6 +29,15 @@ logger = logging.getLogger("timestat")
 def create_app() -> Flask:
     config.load_env_file(os.path.join(BASE_DIR, ".env"))
     config.load_env_file("/etc/timestat/timestat.env")
+    # Day/week boundaries for activity grids and analytics are computed
+    # against the server process's local timezone (SQLite's 'localtime'
+    # modifier, and Python's own local-time conversions). Without this,
+    # setting TZ in the env file has no effect on an already-running
+    # process's C-library timezone state, and sessions worked late at night
+    # can silently land on the "wrong" day if the server's default
+    # (frequently UTC) doesn't match where the team actually works.
+    if hasattr(time, "tzset"):
+        time.tzset()
 
     app = Flask(__name__)
 
@@ -231,6 +242,22 @@ def create_app() -> Flask:
             else vary or "Accept-Encoding"
         )
         return response
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(err):
+        # HTTPException subclasses (404, the CSRF 400 above, abort(...), etc.)
+        # already carry their own correct status/body - only unexpected,
+        # truly-unhandled exceptions (e.g. a SQLite "database is locked"
+        # under write contention) should hit this path.
+        if isinstance(err, HTTPException):
+            return err
+        logger.exception("Unhandled exception on %s %s", request.method, request.path)
+        # Without this, an unhandled exception on an API route returned
+        # Flask's default HTML error page. postJson()/fetch callers parsing
+        # that as JSON got a cryptic SyntaxError instead of any real message.
+        if request.path.startswith("/api/") or request.path.startswith("/admin/api/"):
+            return jsonify({"error": "Something went wrong. Please try again."}), 500
+        return "Internal Server Error", 500
 
     @app.teardown_appcontext
     def close_db(exception):

@@ -74,6 +74,7 @@ All supported env values are in `deploy/timestat.env.example`.
 | `ADMIN_CODE` | No | Single admin login code. Auto-generated on first startup if unset, written back to `.env`, and printed to stderr/journal once. |
 | `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS. **Leave unset or `false` for HTTP-only deployments (e.g., local testing, HTTP-accessible LAN) to prevent mobile login issues.** |
 | `FLASK_DEBUG` | No | Set `1` for debug mode when running `python app.py` |
+| `TZ` | No | IANA timezone name (e.g. `America/New_York`). Day/week boundaries in activity grids and analytics follow the **server's** timezone, not a per-user one - set this to match your team if the server's OS default (often UTC) doesn't. |
 
 ## Deploy (systemd + Gunicorn)
 

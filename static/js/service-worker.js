@@ -34,10 +34,18 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
+      const hadOlderCache = keys.some((k) => k !== CACHE_VERSION);
       await Promise.all(
         keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))
       );
       await self.clients.claim();
+      // clients.claim() takes over already-open tabs immediately, with no
+      // prompt - tell them a new version is active so stale in-memory JS
+      // doesn't silently keep running against newer cached assets.
+      if (hadOlderCache) {
+        const clients = await self.clients.matchAll({ type: "window" });
+        clients.forEach((client) => client.postMessage({ type: "sw-updated" }));
+      }
     })()
   );
 });
@@ -59,7 +67,12 @@ self.addEventListener("fetch", (event) => {
         try {
           const fresh = await fetch(request);
           const cache = await caches.open(CACHE_VERSION);
-          cache.put("/dashboard", fresh.clone()).catch(() => {});
+          // Cache under the actual request, not a fixed literal key - every
+          // navigation used to overwrite the same "/dashboard" entry
+          // regardless of which page was fetched, so the offline fallback
+          // could serve a completely different page's stale HTML under the
+          // URL the user actually requested.
+          cache.put(request, fresh.clone()).catch(() => {});
           return fresh;
         } catch (_err) {
           const cached = await caches.match(request);

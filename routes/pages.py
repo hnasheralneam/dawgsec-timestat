@@ -17,9 +17,7 @@ def register_routes(app):
         )
         trend_rows = queries.user_activity_grid(user["id"], current_ts, days=14)
         initial_data = {
-            "status": payloads.build_status_payload(
-                user["id"], current_ts, current_ts, pop_alert=True
-            ),
+            "status": payloads.build_status_payload(user["id"], current_ts, current_ts),
             "digest": payloads.build_weekly_digest(user["id"], current_ts, limit=5),
             "recent": {
                 "sessions": recent_sessions,

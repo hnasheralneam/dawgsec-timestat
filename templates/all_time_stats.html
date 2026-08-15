@@ -56,43 +56,54 @@
 
   async function loadLeaderboard() {
     const tbody = document.getElementById("leaderboardBody");
+    const empty = document.getElementById("leaderboardEmpty");
     if (!leaderboardLoadedOnce) {
       tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
     }
-    const res = await fetch("/api/leaderboard");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load leaderboard");
-    leaderboardLoadedOnce = true;
+    try {
+      const res = await fetch("/api/leaderboard");
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Could not load leaderboard (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load leaderboard");
+      leaderboardLoadedOnce = true;
 
-    const empty = document.getElementById("leaderboardEmpty");
+      const serialized = JSON.stringify(data.leaderboard);
+      if (serialized === lastLeaderboardJson) return;
+      lastLeaderboardJson = serialized;
 
-    const serialized = JSON.stringify(data.leaderboard);
-    if (serialized === lastLeaderboardJson) return;
-    lastLeaderboardJson = serialized;
-
-    tbody.innerHTML = "";
-    if (!data.leaderboard.length) {
-      empty.classList.remove("hidden");
-      return;
-    }
-    empty.classList.add("hidden");
-    for (const row of data.leaderboard) {
-      const tr = document.createElement("tr");
-      const isMe = row.user_id === currentUserId;
-      const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
-      const medal = medals[row.rank - 1] || "";
-      if (isMe) tr.classList.add("font-semibold");
-      tr.innerHTML = `
-        <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">#${row.rank}</span>`}</td>
-        <td>
-          <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
-            <span class="material-symbols-rounded" aria-hidden="true">person</span>
-            ${row.username}${isMe ? " (you)" : ""}
-          </a>
-        </td>
-        <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
-      `;
-      tbody.appendChild(tr);
+      tbody.innerHTML = "";
+      if (!data.leaderboard.length) {
+        empty.classList.remove("hidden");
+        return;
+      }
+      empty.classList.add("hidden");
+      for (const row of data.leaderboard) {
+        const tr = document.createElement("tr");
+        const isMe = row.user_id === currentUserId;
+        const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
+        const medal = medals[row.rank - 1] || "";
+        if (isMe) tr.classList.add("font-semibold");
+        tr.innerHTML = `
+          <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">#${row.rank}</span>`}</td>
+          <td>
+            <a href="/users/${row.user_id}" class="inline-flex items-center gap-1 font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
+              <span class="material-symbols-rounded" aria-hidden="true">person</span>
+              ${row.username}${isMe ? " (you)" : ""}
+            </a>
+          </td>
+          <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    } catch (err) {
+      // Surface the failure instead of leaving the pulsing "Loading…" row (or
+      // a stale table) up forever with zero indication anything went wrong.
+      lastLeaderboardJson = null;
+      empty.classList.add("hidden");
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-red text-sm">${escapeHtml(err.message || "Could not load leaderboard.")}</td></tr>`;
     }
   }
 
@@ -132,32 +143,49 @@
   }
 
   async function loadStats() {
-    // Chart.js loads in parallel with the request; it only needs to be
-    // ready before rendering.
-    await window.ensureCharts().catch(() => {});
-    const res = await fetch("/api/stats");
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load stats");
+    try {
+      // Chart.js loads in parallel with the request; it only needs to be
+      // ready before rendering.
+      await window.ensureCharts().catch(() => {});
+      const res = await fetch("/api/stats");
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Could not load stats (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load stats");
 
-    myChart = renderPie(
-      myChart,
-      "myChart",
-      data.my_categories.map(x => x.name),
-      data.my_categories.map(x => x.seconds / 3600),
-      "Your Hours",
-      "myChartEmpty",
-      "myChartTotalHours"
-    );
+      myChart = renderPie(
+        myChart,
+        "myChart",
+        data.my_categories.map(x => x.name),
+        data.my_categories.map(x => x.seconds / 3600),
+        "Your Hours",
+        "myChartEmpty",
+        "myChartTotalHours"
+      );
 
-    teamChart = renderPie(
-      teamChart,
-      "teamChart",
-      data.team_categories.map(x => x.name),
-      data.team_categories.map(x => x.seconds / 3600),
-      "Team Hours",
-      "teamChartEmpty",
-      "teamChartTotalHours"
-    );
+      teamChart = renderPie(
+        teamChart,
+        "teamChart",
+        data.team_categories.map(x => x.name),
+        data.team_categories.map(x => x.seconds / 3600),
+        "Team Hours",
+        "teamChartEmpty",
+        "teamChartTotalHours"
+      );
+    } catch (err) {
+      [[myChart, "myChartEmpty", "myChartTotalHours"], [teamChart, "teamChartEmpty", "teamChartTotalHours"]]
+        .forEach(([chart, emptyId, totalId]) => {
+          if (chart) chart.destroy();
+          const empty = document.getElementById(emptyId);
+          empty.textContent = err.message || "Could not load stats.";
+          empty.classList.remove("hidden");
+          document.getElementById(totalId).classList.add("hidden");
+        });
+      myChart = null;
+      teamChart = null;
+    }
   }
 
   async function refreshAll() {
@@ -165,10 +193,12 @@
   }
 
   // All-time data changes rarely; poll on a slow, visibility-aware cadence and
-  // refresh immediately when the tab regains focus.
+  // refresh immediately when the tab regains focus. The same in-flight guard
+  // covers the very first load too, so a visibilitychange firing right after
+  // page load can't start a second, concurrent refresh racing the first.
   let refreshInFlight = false;
-  async function scheduledRefresh() {
-    if (document.hidden || refreshInFlight) return;
+  async function guardedRefresh() {
+    if (refreshInFlight) return;
     refreshInFlight = true;
     try {
       await refreshAll();
@@ -177,6 +207,10 @@
     } finally {
       refreshInFlight = false;
     }
+  }
+  async function scheduledRefresh() {
+    if (document.hidden) return;
+    await guardedRefresh();
   }
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   const slowConnection = Boolean(connection && (
@@ -187,6 +221,6 @@
     if (!document.hidden) scheduledRefresh();
   });
 
-  refreshAll().catch(() => {});
+  guardedRefresh();
 </script>
 {% endblock %}

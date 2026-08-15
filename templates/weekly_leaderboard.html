@@ -46,81 +46,30 @@
   let barChart = null;
   let weeklyLeaderboardLoadedOnce = false;
   let lastWeeklyLeaderboardJson = null;
+  let lastLeaderboardRows = null;
+  let leaderboardRequestController = null;
+  let leaderboardRequestSequence = 0;
 
-  async function loadWeeklyLeaderboard() {
-    // Chart.js loads in parallel with the request; it only needs to be
-    // ready before rendering.
-    const fetchPromise = fetch("/api/leaderboard/weekly");
-    const tbody = document.getElementById("weeklyLeaderboardBody");
-    if (!weeklyLeaderboardLoadedOnce) {
-      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
-    }
-    await window.ensureCharts().catch(() => {});
-    const res = await fetchPromise;
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
-    weeklyLeaderboardLoadedOnce = true;
-
-    const empty = document.getElementById("weeklyLeaderboardEmpty");
-    const barEmpty = document.getElementById("weeklyBarEmpty");
-    const range = document.getElementById("weekRangeLabel");
-    range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
-
-    if (!data.leaderboard.length) {
-      empty.classList.remove("hidden");
-      barEmpty.classList.remove("hidden");
-      if (barChart) { barChart.destroy(); barChart = null; }
-      lastWeeklyLeaderboardJson = JSON.stringify(data.leaderboard);
-      tbody.innerHTML = "";
-      return;
-    }
-    empty.classList.add("hidden");
-    barEmpty.classList.add("hidden");
-
-    const serialized = JSON.stringify(data.leaderboard);
-    const tableChanged = serialized !== lastWeeklyLeaderboardJson;
-    lastWeeklyLeaderboardJson = serialized;
-
-    if (tableChanged) {
-      tbody.innerHTML = "";
-      for (const row of data.leaderboard) {
-        const tr = document.createElement("tr");
-        const isMe = row.user_id === currentUserId;
-        if (isMe) tr.classList.add("font-semibold");
-        const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
-        const medal = medals[row.rank - 1] || "";
-        tr.innerHTML = `
-          <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
-          <td>
-            <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
-              ${row.username}${isMe ? " (you)" : ""}
-            </a>
-          </td>
-          <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
-        `;
-        tbody.appendChild(tr);
-      }
-    }
-
-    // Chart colors can change independently of the leaderboard data (e.g.
-    // on theme toggle), so it's always refreshed. renderOrUpdateChart
-    // updates the existing chart in place rather than destroying/recreating
-    // it, so this doesn't cause a visible flash.
+  // Rebuilds just the bar chart's colors from the last-loaded rows, with no
+  // network round trip - used for theme changes, which affect only chart
+  // colors, not the underlying data. `force` bypasses renderOrUpdateChart's
+  // no-op skip (it otherwise only redraws when labels/values change).
+  function repaintBarChart(force = false) {
+    if (!lastLeaderboardRows || !lastLeaderboardRows.length) return;
     const textColor = window.cssRgb("--gb-fg-rgb");
     const gridColor = window.cssRgb("--gb-bg2-rgb");
-    const barColors = data.leaderboard.map((row) =>
+    const barColors = lastLeaderboardRows.map((row) =>
       row.user_id === currentUserId
         ? `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--gb-green-rgb").trim()} / 0.85)`
         : `rgb(${getComputedStyle(document.documentElement).getPropertyValue("--gb-blue-rgb").trim()} / 0.75)`
     );
-
     barChart = window.renderOrUpdateChart(barChart, document.getElementById("weeklyBarChart"), {
       type: "bar",
       data: {
-        labels: data.leaderboard.map((r) => r.username),
+        labels: lastLeaderboardRows.map((r) => r.username),
         datasets: [{
           label: "Hours",
-          data: data.leaderboard.map((r) => r.seconds / 3600),
+          data: lastLeaderboardRows.map((r) => r.seconds / 3600),
           backgroundColor: barColors,
           borderWidth: 0,
           borderRadius: 6
@@ -135,20 +84,104 @@
         plugins: {
           legend: { display: false }
         }
-      }
+      },
+      force
     });
   }
 
-  document.querySelectorAll(".theme-toggle").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      loadWeeklyLeaderboard().catch(() => {
-        document.getElementById("weeklyLeaderboardEmpty").classList.remove("hidden");
-      });
-    });
-  });
+  async function loadWeeklyLeaderboard() {
+    const requestSequence = ++leaderboardRequestSequence;
+    if (leaderboardRequestController) leaderboardRequestController.abort();
+    const controller = new AbortController();
+    leaderboardRequestController = controller;
 
-  loadWeeklyLeaderboard().catch(() => {
-    document.getElementById("weeklyLeaderboardEmpty").classList.remove("hidden");
-  });
+    const tbody = document.getElementById("weeklyLeaderboardBody");
+    const empty = document.getElementById("weeklyLeaderboardEmpty");
+    const barEmpty = document.getElementById("weeklyBarEmpty");
+    if (!weeklyLeaderboardLoadedOnce) {
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-fg/60 loading-pulse text-sm">Loading…</td></tr>`;
+    }
+    try {
+      // Chart.js loads in parallel with the request; it only needs to be
+      // ready before rendering.
+      const fetchPromise = fetch("/api/leaderboard/weekly", { signal: controller.signal });
+      await window.ensureCharts().catch(() => {});
+      const res = await fetchPromise;
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Could not load weekly leaderboard (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load weekly leaderboard");
+      // A newer call (rapid theme toggling, tab refocus, etc.) may have
+      // already superseded this one - never let a stale response win.
+      if (requestSequence !== leaderboardRequestSequence) return;
+      weeklyLeaderboardLoadedOnce = true;
+
+      const range = document.getElementById("weekRangeLabel");
+      range.textContent = data.since_ts ? `${formatShortDate(data.since_ts)} - ${formatShortDate(data.server_ts)} (Last 7 days)` : "Last 7 days";
+
+      if (!data.leaderboard.length) {
+        empty.textContent = "No weekly tracked sessions yet.";
+        empty.classList.remove("hidden");
+        barEmpty.textContent = "No weekly tracked sessions yet.";
+        barEmpty.classList.remove("hidden");
+        if (barChart) { barChart.destroy(); barChart = null; }
+        lastLeaderboardRows = null;
+        lastWeeklyLeaderboardJson = JSON.stringify(data.leaderboard);
+        tbody.innerHTML = "";
+        return;
+      }
+      empty.classList.add("hidden");
+      barEmpty.classList.add("hidden");
+
+      const serialized = JSON.stringify(data.leaderboard);
+      const tableChanged = serialized !== lastWeeklyLeaderboardJson;
+      lastWeeklyLeaderboardJson = serialized;
+      lastLeaderboardRows = data.leaderboard;
+
+      if (tableChanged) {
+        tbody.innerHTML = "";
+        for (const row of data.leaderboard) {
+          const tr = document.createElement("tr");
+          const isMe = row.user_id === currentUserId;
+          if (isMe) tr.classList.add("font-semibold");
+          const medals = Array.isArray(window.MEDALS) ? window.MEDALS : [];
+          const medal = medals[row.rank - 1] || "";
+          tr.innerHTML = `
+            <td>${medal ? `<span aria-label="Rank ${row.rank}">${medal}</span>` : `<span class="text-gb-fg/60">${row.rank}</span>`}</td>
+            <td>
+              <a href="/users/${row.user_id}" class="font-medium ${isMe ? "text-gb-green" : "text-gb-blue hover:text-gb-purple"}" data-tooltip="${isMe ? "You" : `View ${row.username}'s profile`}">
+                ${row.username}${isMe ? " (you)" : ""}
+              </a>
+            </td>
+            <td class="text-right" data-tooltip="${row.seconds} seconds total">${formatHours(row.seconds)}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+
+      repaintBarChart();
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      if (requestSequence !== leaderboardRequestSequence) return;
+      // Distinct from the "no data yet" empty state - this is a failed
+      // request, not an empty result, and saying otherwise is misleading.
+      lastWeeklyLeaderboardJson = null;
+      empty.classList.add("hidden");
+      barEmpty.classList.add("hidden");
+      tbody.innerHTML = `<tr><td colspan="3" class="py-3 text-center text-gb-red text-sm">${escapeHtml(err.message || "Could not load weekly leaderboard.")}</td></tr>`;
+    } finally {
+      if (requestSequence === leaderboardRequestSequence) leaderboardRequestController = null;
+    }
+  }
+
+  // Theme changes only affect chart colors, not the underlying leaderboard
+  // data - repaint locally instead of re-fetching (avoids both an
+  // unnecessary network request and the out-of-order-response race that
+  // came with re-fetching on every toggle click).
+  window.addEventListener("timestat:theme-changed", () => repaintBarChart(true));
+
+  loadWeeklyLeaderboard().catch(() => {});
 </script>
 {% endblock %}

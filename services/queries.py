@@ -36,16 +36,23 @@ def get_active_session(user_id: int):
         limit_seconds = config.MAX_SESSION_RUNNING_HOURS * 3600
         if elapsed > limit_seconds:
             pause_ts = active["start_ts"] + active["paused_seconds"] + limit_seconds
+            # The "you were auto-paused" alert is tracked as a DB column
+            # (auto_pause_pending_alert), not a Flask-session cookie flag -
+            # a cookie write made here isn't reliably persisted once an SSE
+            # response has started streaming (the Set-Cookie header is sent
+            # with the first chunk), which used to silently drop the alert
+            # whenever this ran from inside the stream rather than a normal
+            # REST request. A plain DB write works from either context.
             cur = conn.execute(
-                "UPDATE sessions SET status = 'paused', pause_started_ts = ? WHERE id = ? AND status = 'running'",
+                """
+                UPDATE sessions
+                SET status = 'paused', pause_started_ts = ?, auto_pause_pending_alert = 1
+                WHERE id = ? AND status = 'running'
+                """,
                 (pause_ts, active["id"]),
             )
             if cur.rowcount > 0:
                 conn.commit()
-                try:
-                    session["auto_paused_alert"] = True
-                except RuntimeError:
-                    pass
             else:
                 conn.rollback()
             active = conn.execute(

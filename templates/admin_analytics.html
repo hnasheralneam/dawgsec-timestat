@@ -99,6 +99,40 @@
   let hourOfDayChart = null;
   let categoriesAllChart = null;
   let categoriesWeekChart = null;
+  let analyticsRequestController = null;
+  let analyticsRequestSequence = 0;
+
+  const EMPTY_STATE_IDS = [
+    "hoursPerDayEmpty", "activeUsersEmpty", "hourOfDayEmpty",
+    "topUsersEmpty", "categoriesAllEmpty", "categoriesWeekEmpty"
+  ];
+  const EMPTY_STATE_DEFAULT_TEXT = {};
+  EMPTY_STATE_IDS.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) EMPTY_STATE_DEFAULT_TEXT[id] = el.textContent;
+  });
+
+  function showLoadError(message) {
+    [hoursPerDayChart, activeUsersChart, hourOfDayChart, categoriesAllChart, categoriesWeekChart]
+      .forEach((chart) => { if (chart) chart.destroy(); });
+    hoursPerDayChart = activeUsersChart = hourOfDayChart = categoriesAllChart = categoriesWeekChart = null;
+    document.getElementById("topUsersBody").innerHTML = "";
+    EMPTY_STATE_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = message;
+      el.classList.remove("hidden");
+    });
+  }
+
+  function clearLoadError() {
+    EMPTY_STATE_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.textContent !== EMPTY_STATE_DEFAULT_TEXT[id]) {
+        el.textContent = EMPTY_STATE_DEFAULT_TEXT[id];
+      }
+    });
+  }
 
   function textColor() { return window.cssRgb("--gb-fg-rgb"); }
   function gridColor() { return window.cssRgb("--gb-bg2-rgb"); }
@@ -178,13 +212,23 @@
   }
 
   async function loadAnalytics() {
+    const requestSequence = ++analyticsRequestSequence;
+    if (analyticsRequestController) analyticsRequestController.abort();
+    const controller = new AbortController();
+    analyticsRequestController = controller;
+
     // Fetch and Chart.js load race in parallel; charts are only needed
     // once the data arrives.
-    const resPromise = fetch("/admin/api/analytics");
+    const resPromise = fetch("/admin/api/analytics", { signal: controller.signal });
     await window.ensureCharts().catch(() => {});
     const res = await resPromise;
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not load analytics");
+    // A newer refresh may have started (and possibly already resolved)
+    // while this one was in flight - never let a slower, older response
+    // overwrite fresher data.
+    if (requestSequence !== analyticsRequestSequence) return;
+    clearLoadError();
 
     hoursPerDayChart = barChart(
       hoursPerDayChart, "hoursPerDayChart",
@@ -222,15 +266,21 @@
       (data.categories_week || []).map((x) => +(x.seconds / 3600).toFixed(2)),
       "categoriesWeekEmpty", ""
     );
+    analyticsRequestController = null;
   }
 
   loadAnalytics().catch((err) => {
+    if (err.name === "AbortError") return;
     const btn = document.getElementById("refreshAnalyticsBtn");
     btn.classList.add("flash-error");
     btn.setAttribute("data-tooltip", err.message || "Could not load analytics");
+    showLoadError(err.message || "Could not load analytics.");
   });
   document.getElementById("refreshAnalyticsBtn").addEventListener("click", () => {
-    loadAnalytics().catch(() => {});
+    loadAnalytics().catch((err) => {
+      if (err.name === "AbortError") return;
+      showLoadError(err.message || "Could not load analytics.");
+    });
   });
 </script>
 {% endblock %}

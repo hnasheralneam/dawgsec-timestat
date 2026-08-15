@@ -235,7 +235,9 @@
     collabSinceTs: null,
     collabInitialized: false,
     shownStartNotifications: new Set(),
-    actionBusy: false
+    shownStartNotificationsOrder: [],
+    actionBusy: false,
+    lastStatusServerTs: null
   };
 
   // formatDuration, formatHours, tsToLocal, escapeHtml, and postJson are
@@ -329,13 +331,13 @@
       showReduce = true;
     }
 
-    start.disabled = state.actionBusy || !showStart;
-    pause.disabled = state.actionBusy || !showPause;
-    resume.disabled = state.actionBusy || !showResume;
-    finish.disabled = state.actionBusy || !showFinish;
-    cancel.disabled = state.actionBusy || !showCancel;
-    reduce10.disabled = state.actionBusy || !showReduce;
-    reduce30.disabled = state.actionBusy || !showReduce;
+    start.disabled = !showStart;
+    pause.disabled = !showPause;
+    resume.disabled = !showResume;
+    finish.disabled = !showFinish;
+    cancel.disabled = !showCancel;
+    reduce10.disabled = !showReduce;
+    reduce30.disabled = !showReduce;
 
     start.classList.toggle("hidden", !showStart);
     pause.classList.toggle("hidden", !showPause);
@@ -346,8 +348,42 @@
     reduce30.classList.toggle("hidden", !showReduce);
   }
 
-  const pendingActions = [];
+  // Persisted so a reload/tab-close while something is queued doesn't
+  // silently discard it - only url/body/history are needed to replay a
+  // queued mutation (the optimistic snapshot/rollback already happened at
+  // queue time and isn't needed again).
+  const PENDING_ACTIONS_STORAGE_KEY = "timestat-pending-actions";
+  let pendingActions = [];
+  try {
+    const stored = localStorage.getItem(PENDING_ACTIONS_STORAGE_KEY);
+    if (stored) pendingActions = JSON.parse(stored) || [];
+  } catch (_err) {
+    pendingActions = [];
+  }
   let flushingActions = false;
+  let pendingRetryTimer = null;
+
+  function persistPendingActions() {
+    try {
+      if (pendingActions.length) {
+        localStorage.setItem(PENDING_ACTIONS_STORAGE_KEY, JSON.stringify(pendingActions));
+      } else {
+        localStorage.removeItem(PENDING_ACTIONS_STORAGE_KEY);
+      }
+    } catch (_err) {}
+  }
+
+  // A single setTimeout retry (the old behavior) gets permanently stuck if
+  // the browser never fires a real "online" event - e.g. the network is
+  // fine but the backend itself is briefly unreachable. Keep rescheduling
+  // as long as anything is still queued.
+  function scheduleRetry() {
+    if (pendingRetryTimer || !pendingActions.length) return;
+    pendingRetryTimer = setTimeout(() => {
+      pendingRetryTimer = null;
+      flushPendingActions();
+    }, 5000);
+  }
 
   function isNetworkFailure(err) {
     return err instanceof TypeError || !navigator.onLine;
@@ -368,16 +404,24 @@
           if (data.status) applyStatus(data.status);
           if (action.history) await refreshHistory();
           pendingActions.shift();
+          persistPendingActions();
           setMessage("Connection restored. Change saved.");
         } catch (err) {
           if (isNetworkFailure(err)) break;
+          // A non-network failure (e.g. the session this was queued against
+          // no longer exists or has since diverged - see the session_id
+          // guard sent with each mutation) means this queued change can
+          // never succeed as-is; drop it and resync rather than retrying
+          // something that will keep failing the same way forever.
           pendingActions.shift();
+          persistPendingActions();
           await loadStatus().catch(() => {});
           setMessage(err.message || "Could not save queued change.", true);
         }
       }
     } finally {
       flushingActions = false;
+      if (pendingActions.length) scheduleRetry();
     }
   }
 
@@ -386,11 +430,11 @@
     message,
     history = false
   } = {}) {
+    if (state.actionBusy) return null;
     const snapshot = state.current ? { ...state.current } : null;
     const timerSnapshot = state.timerBase;
-    if (optimistic) optimistic();
     state.actionBusy = true;
-    updateButtons();
+    if (optimistic) optimistic();
     try {
       const data = await postJson(url, body);
       if (data.status) applyStatus(data.status);
@@ -398,10 +442,18 @@
       if (message) setMessage(message);
       return data;
     } catch (err) {
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        // Unlike a stale/rejected action, there's nothing to retry or roll
+        // back to here - the session is gone, so every button would just
+        // keep failing the same way until the user manually reloads.
+        window.location.href = "/login";
+        return null;
+      }
       if (isNetworkFailure(err)) {
-        pendingActions.push({ url, body, history, snapshot, timerSnapshot });
+        pendingActions.push({ url, body, history });
+        persistPendingActions();
         setMessage("Offline. Change queued and will retry automatically.");
-        setTimeout(flushPendingActions, 3000);
+        scheduleRetry();
         return null;
       }
       state.current = snapshot;
@@ -418,7 +470,7 @@
 
   async function adjustSession(seconds, label) {
     if (!state.current) return;
-    await performSessionAction("/api/session/adjust", { seconds }, {
+    await performSessionAction("/api/session/adjust", { seconds, session_id: state.current.id }, {
       optimistic: () => {
         state.timerBase = Math.max(0, state.timerBase - seconds);
         renderSession();
@@ -457,7 +509,7 @@
       const res = await fetch(statusUrl, { signal: controller.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load session status");
-      if (requestSequence === statusRequestSequence) applyStatus(data);
+      if (requestSequence === statusRequestSequence && !state.actionBusy && !pendingActions.length) applyStatus(data, { passive: true });
     } catch (err) {
       if (err.name !== "AbortError") throw err;
     } finally {
@@ -465,9 +517,48 @@
     }
   }
 
-  function applyStatus(data) {
+  // Caps how many teammate-start events this tab remembers having already
+  // notified about. Without a cap, a long-lived tab (this page is designed
+  // to stay open via SSE rather than reload) on a busy team would grow this
+  // Set for as long as the tab stays open.
+  const SHOWN_START_NOTIFICATIONS_LIMIT = 500;
+  function rememberStartNotification(sessionId) {
+    state.shownStartNotifications.add(sessionId);
+    state.shownStartNotificationsOrder.push(sessionId);
+    while (state.shownStartNotificationsOrder.length > SHOWN_START_NOTIFICATIONS_LIMIT) {
+      const oldest = state.shownStartNotificationsOrder.shift();
+      state.shownStartNotifications.delete(oldest);
+    }
+  }
+
+  function applyStatus(data, { passive = false } = {}) {
+    // Drop pushes that are strictly older than what we've already applied -
+    // a backstop against a stale SSE/poll snapshot (read before a mutation
+    // committed) arriving after that mutation's own, fresher response.
+    if (
+      data.server_ts != null &&
+      state.lastStatusServerTs != null &&
+      data.server_ts < state.lastStatusServerTs
+    ) {
+      return;
+    }
+
+    const sameRunningSession =
+      state.current &&
+      data.current_session &&
+      state.current.id === data.current_session.id &&
+      state.current.status === "running" &&
+      data.current_session.status === "running";
+
     state.current = data.current_session;
-    state.timerBase = state.current ? state.current.elapsed_seconds : 0;
+    if (passive && sameRunningSession) {
+      // Passive resyncs (SSE push, background poll) must never visibly
+      // rewind a running timer - only genuine user actions can move it down.
+      state.timerBase = Math.max(state.timerBase, data.current_session.elapsed_seconds);
+    } else {
+      state.timerBase = state.current ? state.current.elapsed_seconds : 0;
+    }
+    if (data.server_ts != null) state.lastStatusServerTs = data.server_ts;
     state.collabSinceTs = data.server_ts || state.collabSinceTs;
     renderPresence(data.team_presence || []);
 
@@ -478,13 +569,13 @@
 
     if (!state.collabInitialized) {
       for (const event of data.new_starts || []) {
-        state.shownStartNotifications.add(event.session_id);
+        rememberStartNotification(event.session_id);
       }
       state.collabInitialized = true;
     } else {
       for (const event of data.new_starts || []) {
         if (state.shownStartNotifications.has(event.session_id)) continue;
-        state.shownStartNotifications.add(event.session_id);
+        rememberStartNotification(event.session_id);
         if (!data.notify_on_collab_starts) continue;
         const detail = event.note ? `${event.category_name} — ${event.note}` : event.category_name;
         showCollabNotification(`${event.username} started: ${detail}`);
@@ -558,7 +649,7 @@
   let teamWeekChart = null;
   let dailyTrendChart = null;
 
-  function renderPie(chartRef, canvasId, labels, values, title, emptyId, totalEl) {
+  function renderPie(chartRef, canvasId, labels, values, title, emptyId, totalEl, force = false) {
     const empty = document.getElementById(emptyId);
     if (totalEl) document.getElementById(totalEl).classList.add("hidden");
     if (!labels.length) {
@@ -586,7 +677,8 @@
       },
       options: {
         plugins: { legend: { position: "bottom", labels: { color: textColor } }, title: { display: true, text: title, color: textColor } }
-      }
+      },
+      force
     });
   }
 
@@ -613,7 +705,11 @@
     }
   }
 
-  function applyStats(data) {
+  let lastStatsData = null;
+  let lastTrendDays = null;
+
+  function applyStats(data, force = false) {
+    lastStatsData = data;
     myWeekChart = renderPie(
       myWeekChart,
       "myWeekChart",
@@ -621,7 +717,8 @@
       data.my_categories_week.map(x => x.seconds / 3600),
       "Your Hours (Last 7 Days)",
       "myWeekEmpty",
-      "myWeekTotalHours"
+      "myWeekTotalHours",
+      force
     );
 
     teamWeekChart = renderPie(
@@ -631,11 +728,13 @@
       data.team_categories_week.map(x => x.seconds / 3600),
       "Team Hours (Last 7 Days)",
       "teamWeekEmpty",
-      "teamWeekTotalHours"
+      "teamWeekTotalHours",
+      force
     );
   }
 
-  function renderDailyTrend(days) {
+  function renderDailyTrend(days, force = false) {
+    lastTrendDays = days;
     const empty = document.getElementById("dailyTrendEmpty");
     const hasData = days.some((d) => d.seconds > 0);
     if (!days.length || !hasData) {
@@ -670,9 +769,20 @@
         plugins: {
           legend: { display: false }
         }
-      }
+      },
+      force
     });
   }
+
+  // Theme/palette changes only affect chart colors, not the underlying
+  // data - repaint from the last-loaded data instead of re-fetching.
+  // renderOrUpdateChart otherwise skips redrawing when labels/values are
+  // unchanged, so without `force` these would stay the old theme's colors
+  // until an unrelated data refresh happened to come in.
+  window.addEventListener("timestat:theme-changed", () => {
+    if (lastStatsData) applyStats(lastStatsData, true);
+    if (lastTrendDays) renderDailyTrend(lastTrendDays, true);
+  });
 
   let trendRequestController = null;
   let trendRequestSequence = 0;
@@ -751,13 +861,31 @@
     document.getElementById("editSessionPanel").classList.add("hidden");
     document.getElementById("editSessionId").value = "";
     document.getElementById("editNote").value = "";
+    document.querySelectorAll('#editCategoryName option[data-stale="1"]').forEach((opt) => opt.remove());
   }
 
   function openEditPanel(sessionId) {
     const selected = state.recentSessions.find((s) => s.id === sessionId);
     if (!selected) return;
     document.getElementById("editSessionId").value = String(selected.id);
-    document.getElementById("editCategoryName").value = String(selected.category_name || "");
+    const categorySelect = document.getElementById("editCategoryName");
+    const categoryName = String(selected.category_name || "");
+    categorySelect.value = categoryName;
+    if (categorySelect.value !== categoryName) {
+      // The category list is rendered once at page load; if an admin
+      // deleted/renamed this category while the tab stayed open (this is a
+      // long-lived SSE page), assigning .value silently no-ops and leaves
+      // whichever option happened to be selected - a save would then
+      // silently recategorize the session. Insert the real (now-stale)
+      // name as a temporary option instead, so the field honestly reflects
+      // what this session is actually filed under.
+      const staleOption = document.createElement("option");
+      staleOption.value = categoryName;
+      staleOption.textContent = `${categoryName} (no longer available)`;
+      staleOption.dataset.stale = "1";
+      categorySelect.appendChild(staleOption);
+      categorySelect.value = categoryName;
+    }
     document.getElementById("editNote").value = selected.note || "";
     document.getElementById("editSessionPanel").classList.remove("hidden");
     document.getElementById("editNote").focus();
@@ -1041,7 +1169,8 @@
   });
 
   document.getElementById("pauseBtn").addEventListener("click", async () => {
-    await performSessionAction("/api/session/pause", {}, {
+    if (!state.current) return;
+    await performSessionAction("/api/session/pause", { session_id: state.current.id }, {
       optimistic: () => {
         if (state.current) state.current = { ...state.current, status: "paused" };
         renderSession();
@@ -1051,7 +1180,8 @@
   });
 
   document.getElementById("resumeBtn").addEventListener("click", async () => {
-    await performSessionAction("/api/session/resume", {}, {
+    if (!state.current) return;
+    await performSessionAction("/api/session/resume", { session_id: state.current.id }, {
       optimistic: () => {
         if (state.current) state.current = { ...state.current, status: "running" };
         renderSession();
@@ -1061,7 +1191,8 @@
   });
 
   document.getElementById("finishBtn").addEventListener("click", async () => {
-    await performSessionAction("/api/session/finish", {}, {
+    if (!state.current) return;
+    await performSessionAction("/api/session/finish", { session_id: state.current.id }, {
       optimistic: () => {
         state.current = null;
         state.timerBase = 0;
@@ -1075,7 +1206,7 @@
   document.getElementById("cancelBtn").addEventListener("click", async () => {
     if (!state.current) return;
     if (!await window.showAppConfirm("Cancel the current session? This will discard it.")) return;
-    await performSessionAction("/api/session/cancel", {}, {
+    await performSessionAction("/api/session/cancel", { session_id: state.current.id }, {
       optimistic: () => {
         state.current = null;
         state.timerBase = 0;
@@ -1116,7 +1247,12 @@
       return false;
     }
     stream.addEventListener("status", (e) => {
-      try { applyStatus(JSON.parse(e.data)); } catch (_err) {}
+      // Skip while our own action is in flight (its response will supersede
+      // this) or while something is still queued for offline retry (its
+      // eventual result will supersede this too) - otherwise a passive push
+      // can flip the UI back to pre-optimistic state in between.
+      if (state.actionBusy || pendingActions.length) return;
+      try { applyStatus(JSON.parse(e.data), { passive: true }); } catch (_err) {}
     });
     stream.addEventListener("digest", (e) => {
       try {
@@ -1172,13 +1308,19 @@
     state.recentLoadedOnce = true;
     renderRecent(state.recentSessions);
 
+    // applyStats/renderDailyTrend are safe to call whether or not Chart.js
+    // actually loaded - renderOrUpdateChart/renderPie no-op the canvas draw
+    // but still populate the totals/empty-state text. Don't nest them
+    // inside ensureCharts().then(), or a failed chart-bundle load (ad
+    // blocker, CSP, bad deploy) leaves the whole section blank with no
+    // totals and no empty-state either, not just a missing canvas.
     const initialDays = normalizeGrid(initialData.trend);
-    window.ensureCharts().then(() => {
+    window.ensureCharts().catch(() => {}).then(() => {
       applyStats(initialData.digest.stats);
       const days = initialDays.map((day) => ({ ...day }));
       if (state.current && days.length) days[days.length - 1].seconds += state.timerBase;
       renderDailyTrend(days);
-    }).catch(() => {});
+    });
   }
 
   async function bootstrap() {
@@ -1190,6 +1332,14 @@
       loadRecent({ reset: true }).catch(() => {});
       loadDailyTrend().catch(() => {});
       loadStatus().catch(() => {});
+    }
+
+    // Anything restored from a previous session that never made it to the
+    // server (reload/tab-close while offline) - try to flush it now, and
+    // keep retrying on a timer if that fails too.
+    if (pendingActions.length) {
+      flushPendingActions().catch(() => {});
+      scheduleRetry();
     }
 
     if (initStream()) {

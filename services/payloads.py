@@ -5,30 +5,39 @@ stream (``/api/stream``) produce identical payloads and can't drift apart.
 """
 
 import db
-from flask import session as flask_session
 from utils import helpers
 from services import queries
 from services import live_cache
 
 
-def build_status_payload(user_id, current_ts, collab_since_ts, pop_alert=True):
+def build_status_payload(user_id, current_ts, collab_since_ts):
     """Return the dict shape that ``GET /api/status`` emits.
 
-    When ``pop_alert`` is true the one-shot ``auto_paused_alert`` flash flag is
-    popped from the session (REST behaviour). The SSE stream passes ``False``
-    because session writes don't reliably persist once a streaming response has
-    started (the Set-Cookie header is sent with the first chunk).
+    ``auto_paused_alert`` is delivered exactly once via an atomic DB claim
+    (see ``auto_pause_pending_alert`` on the sessions table) rather than a
+    Flask-session cookie flash flag - a cookie write isn't reliably
+    persisted once an SSE response has started streaming (the Set-Cookie
+    header is sent with the first chunk), which used to silently drop the
+    alert whenever the auto-pause happened to occur inside the stream
+    rather than during a plain REST request.
     """
     active = queries.get_active_session(user_id)
 
-    auto_paused_alert = False
-    if pop_alert:
-        try:
-            auto_paused_alert = bool(flask_session.pop("auto_paused_alert", None))
-        except RuntimeError:
-            auto_paused_alert = False
-
     conn = db.get_db()
+
+    auto_paused_alert = False
+    if active and active["auto_pause_pending_alert"]:
+        cur = conn.execute(
+            "UPDATE sessions SET auto_pause_pending_alert = 0 WHERE id = ? AND auto_pause_pending_alert = 1",
+            (active["id"],),
+        )
+        # Whichever caller's UPDATE actually flips the row wins and shows
+        # the alert; anyone else who was about to read it sees it already
+        # cleared - exactly-once delivery regardless of REST vs SSE or
+        # which worker process handles the request.
+        auto_paused_alert = cur.rowcount > 0
+        conn.commit()
+
     user_settings = conn.execute(
         "SELECT notify_on_collab_starts FROM users WHERE id = ?",
         (user_id,),

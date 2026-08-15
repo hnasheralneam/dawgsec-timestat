@@ -192,6 +192,8 @@
     activeUsername: "",
     tasks: []
   };
+  let taskRequestController = null;
+  let taskRequestSequence = 0;
 
   // escapeHtml, formatDuration, tsToLocal, and postJson are provided
   // globally by static/js/common.js (loaded from base.html).
@@ -250,7 +252,13 @@
   }
 
   async function loadUserTasks(userId, username) {
-    state.activeUserId = Number(userId);
+    const requestedUserId = Number(userId);
+    const requestSequence = ++taskRequestSequence;
+    if (taskRequestController) taskRequestController.abort();
+    const controller = new AbortController();
+    taskRequestController = controller;
+
+    state.activeUserId = requestedUserId;
     state.activeUsername = username || "";
     taskModalTitle.textContent = `Manage tasks for ${state.activeUsername}`;
     setTaskModalMessage("");
@@ -259,17 +267,26 @@
     openTaskModal();
 
     try {
-      const res = await fetch(`/admin/api/users/${state.activeUserId}/tasks`);
+      const res = await fetch(`/admin/api/users/${requestedUserId}/tasks`, { signal: controller.signal });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load tasks");
+      // A newer call (a different admin click, possibly for a different
+      // user) may have already superseded this one while it was in flight -
+      // discard a stale response outright rather than let it overwrite a
+      // different user's modal/table row.
+      if (requestSequence !== taskRequestSequence || state.activeUserId !== requestedUserId) return;
       state.tasks = data.tasks || [];
       renderTaskRows();
       syncUserTaskSummary();
       setTaskModalMessage(`Loaded ${state.tasks.length} tasks.`);
     } catch (err) {
+      if (err.name === "AbortError") return;
+      if (requestSequence !== taskRequestSequence || state.activeUserId !== requestedUserId) return;
       setTaskModalMessage(err.message || "Could not load tasks", true);
       state.tasks = [];
       renderTaskRows();
+    } finally {
+      if (requestSequence === taskRequestSequence) taskRequestController = null;
     }
   }
 
@@ -299,24 +316,29 @@
   }
 
   deleteSelectedTasksBtn.addEventListener("click", async () => {
-    if (!state.activeUserId) return;
+    if (!state.activeUserId || deleteSelectedTasksBtn.disabled) return;
     const ids = selectedTaskIds();
     if (!ids.length) {
       setTaskModalMessage("Select at least one task to delete.", true);
       return;
     }
     if (!confirm(`Delete ${ids.length} selected task(s) for ${state.activeUsername}?`)) return;
+    const targetUserId = state.activeUserId;
+    deleteSelectedTasksBtn.disabled = true;
     try {
       const data = await postJson(
-        `/admin/api/users/${state.activeUserId}/tasks/delete`,
+        `/admin/api/users/${targetUserId}/tasks/delete`,
         { session_ids: ids }
       );
+      if (state.activeUserId !== targetUserId) return;
       state.tasks = state.tasks.filter((task) => !ids.includes(task.id));
       renderTaskRows();
       syncUserTaskSummary();
       setTaskModalMessage(`Deleted ${data.deleted_count} task(s).`);
     } catch (err) {
       setTaskModalMessage(err.message || "Could not delete tasks", true);
+    } finally {
+      deleteSelectedTasksBtn.disabled = false;
     }
   });
 

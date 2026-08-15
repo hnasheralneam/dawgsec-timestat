@@ -144,6 +144,15 @@ def init_db() -> None:
     if "theme_custom_color" not in user_columns:
         db.execute("ALTER TABLE users ADD COLUMN theme_custom_color TEXT")
 
+    session_columns = {
+        row["name"]
+        for row in db.execute("PRAGMA table_info(sessions)").fetchall()
+    }
+    if "auto_pause_pending_alert" not in session_columns:
+        db.execute(
+            "ALTER TABLE sessions ADD COLUMN auto_pause_pending_alert INTEGER NOT NULL DEFAULT 0"
+        )
+
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_user_status_id ON sessions(user_id, status, id)"
     )

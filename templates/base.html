@@ -46,6 +46,10 @@
         },
         body: JSON.stringify(body)
       });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Request failed (HTTP ${res.status})`);
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
       return data;
@@ -296,6 +300,7 @@
       let loginCodeMasked = true;
       let settingsOpenerBtn = null;
       let settingsTrapHandler = null;
+      let settingsOpening = false;
 
       function setSettingsMessage(text, isError = false) {
         const el = document.getElementById("settingsMessage");
@@ -360,6 +365,12 @@
         ) : null;
         if (firstFocusable) firstFocusable.focus();
 
+        // Always drop any previously-attached trap listener first - a rapid
+        // re-open must not leak a second document-level keydown listener.
+        if (settingsTrapHandler) {
+          document.removeEventListener("keydown", settingsTrapHandler);
+          settingsTrapHandler = null;
+        }
         settingsTrapHandler = (e) => {
           if (e.key !== "Tab") return;
           const focusable = Array.from(dialogEl.querySelectorAll(
@@ -377,6 +388,10 @@
         document.addEventListener("keydown", settingsTrapHandler);
 
         const res = await fetch("/api/user/settings");
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error(`Could not load settings (HTTP ${res.status})`);
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Could not load settings");
         state.settings = data.user;
@@ -390,11 +405,16 @@
       const postJson = window.postJson;
 
       document.getElementById("openSettingsBtn").addEventListener("click", async () => {
+        if (settingsOpening) return;
+        settingsOpening = true;
         try {
           await openSettingsModal();
         } catch (err) {
+          // Keep the modal open so the error is actually visible - closing it
+          // here (as before) wiped the message in the same tick it was set.
           setSettingsMessage(err.message, true);
-          closeSettingsModal();
+        } finally {
+          settingsOpening = false;
         }
       });
 
@@ -420,7 +440,10 @@
         setLoginCodeDisplay(!loginCodeMasked);
       });
 
-      document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+      document.getElementById("saveSettingsBtn").addEventListener("click", async (event) => {
+        const btn = event.currentTarget;
+        if (btn.disabled) return;
+        btn.disabled = true;
         const username = document.getElementById("settingsUsername").value.trim();
         const notifyOnCollabStarts = document.getElementById("settingsCollabNotify").checked;
         try {
@@ -436,11 +459,16 @@
           setSettingsMessage("Settings updated.");
         } catch (err) {
           setSettingsMessage(err.message, true);
+        } finally {
+          btn.disabled = false;
         }
       });
 
-      document.getElementById("resetLoginCodeBtn").addEventListener("click", async () => {
+      document.getElementById("resetLoginCodeBtn").addEventListener("click", async (event) => {
+        const btn = event.currentTarget;
+        if (btn.disabled) return;
         if (!await window.showAppConfirm("Reset your login code? Your old code will stop working immediately.")) return;
+        btn.disabled = true;
         try {
           const data = await postJson("/api/user/settings/reset-login-code");
           if (!state.settings) state.settings = {};
@@ -449,6 +477,8 @@
           setSettingsMessage("Login code reset. Use the Show button to reveal it.");
         } catch (err) {
           setSettingsMessage(err.message, true);
+        } finally {
+          btn.disabled = false;
         }
       });
 
@@ -465,6 +495,24 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+      });
+      // The SW takes over open tabs immediately on update (skipWaiting +
+      // clients.claim); tell the user a refresh may be needed rather than
+      // silently running mismatched cached assets against newer JS.
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (!event.data || event.data.type !== 'sw-updated') return;
+        if (document.getElementById('swUpdateNotice')) return;
+        const notice = document.createElement('div');
+        notice.id = 'swUpdateNotice';
+        notice.className = 'fixed bottom-4 left-4 right-4 z-50 neu-surface px-3 py-2 text-sm text-gb-fg flex items-center justify-between gap-3';
+        notice.innerHTML = '<span>An update is available.</span>';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'neu-btn-sm neu-btn border border-gb-bg2 bg-gb-bg1 text-gb-fg text-xs px-2 py-1';
+        btn.textContent = 'Refresh';
+        btn.addEventListener('click', () => window.location.reload());
+        notice.appendChild(btn);
+        document.body.appendChild(notice);
       });
     }
     if (window.__timestatCommonLoadFailed) {

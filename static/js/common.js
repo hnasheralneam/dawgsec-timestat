@@ -48,6 +48,13 @@
         },
       body: JSON.stringify(body)
     });
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      // An unhandled server error (or a proxy/gateway error page) returns
+      // HTML, not JSON. Parsing that as JSON throws a cryptic SyntaxError -
+      // surface a plain, actionable message instead.
+      throw new Error(`Request failed (HTTP ${res.status})`);
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Request failed");
     return data;
@@ -88,7 +95,7 @@
             oldVal.every((v, idx) => v === newVal[idx]);
         });
 
-      if (isSameLabels && isSameData) {
+      if (isSameLabels && isSameData && !config.force) {
         return chart;
       }
 
@@ -153,7 +160,14 @@
   window.themeColors = themeColors;
   window.MEDALS = ["🥇", "🥈", "🥉"];
 
+  // The confirm modal is a page-wide singleton, so only one call can own it
+  // at a time. If a second call comes in while one is still open, resolve
+  // the first one as cancelled (and unwind its listener) before opening the
+  // new one - otherwise the first call's promise hangs forever and its
+  // keydown listener leaks.
+  let activeConfirmCleanup = null;
   window.showAppConfirm = function (message) {
+    if (activeConfirmCleanup) activeConfirmCleanup(false);
     return new Promise((resolve) => {
       const modal = document.getElementById("appConfirmModal");
       document.getElementById("appConfirmMessage").textContent = message;
@@ -182,12 +196,33 @@
         ok.onclick = null;
         cancel.onclick = null;
         modal.removeEventListener("keydown", onKeydown);
+        activeConfirmCleanup = null;
         resolve(result);
       }
+      activeConfirmCleanup = cleanup;
       modal.addEventListener("keydown", onKeydown);
       ok.onclick = () => cleanup(true);
       cancel.onclick = () => cleanup(false);
     });
+  };
+
+  // Small, non-blocking notice for background failures the user should know
+  // about but that don't warrant a modal (e.g. a setting that silently
+  // failed to save). Auto-dismisses; multiple calls stack briefly rather
+  // than clobbering each other.
+  window.showToast = function (message, isError = false) {
+    let container = document.getElementById("appToastContainer");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "appToastContainer";
+      container.className = "fixed bottom-4 left-4 right-4 z-50 flex flex-col items-center gap-2 pointer-events-none";
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `neu-surface px-3 py-2 text-sm max-w-md ${isError ? "text-gb-red" : "text-gb-fg"}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
   };
 
   // ---- DOM-dependent one-time setup (runs once the document is parsed) ----
@@ -197,12 +232,22 @@
     // to do here. (Kept as a hook for future icon work.)
 
     document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
-      if (form.querySelector('input[name="csrf_token"]')) return;
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = "csrf_token";
-      input.value = window.getCsrfToken();
-      form.appendChild(input);
+      if (!form.querySelector('input[name="csrf_token"]')) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "csrf_token";
+        input.value = window.getCsrfToken();
+        form.appendChild(input);
+      }
+      // Plain (non-JS) form POSTs - login, register, logout, admin login -
+      // have no double-submit guard on their own; a fast double-click before
+      // the browser starts navigating can fire two requests. This covers
+      // all of them in one place rather than repeating it per template.
+      form.addEventListener("submit", () => {
+        form.querySelectorAll('button[type="submit"], button:not([type])').forEach((btn) => {
+          btn.disabled = true;
+        });
+      });
     });
 
     const themeOrder = ["light", "dark", "system"];
@@ -253,6 +298,22 @@
       document.documentElement.classList.toggle("dark", themeMedia.matches);
       window.TimestatPalette.apply(themeMedia.matches);
       applyThemeUi();
+    });
+
+    // Cross-tab sync: another tab changing the theme mode or palette only
+    // updates that tab's DOM directly (no cookie/API round trip involved),
+    // so without this an already-open second tab keeps showing the old
+    // theme until it's reloaded.
+    window.addEventListener("storage", (event) => {
+      if (event.key === "timestat-theme") {
+        const mode = themeOrder.includes(event.newValue) ? event.newValue : "system";
+        document.documentElement.setAttribute("data-theme-mode", mode);
+        document.documentElement.classList.toggle("dark", isDarkForMode(mode));
+        window.TimestatPalette.apply(isDarkForMode(mode));
+        applyThemeUi();
+      } else if (event.key === "timestat-palette" || event.key === "timestat-custom-color") {
+        window.TimestatPalette.apply(isDarkForMode(getThemeMode()));
+      }
     });
 
     const tooltip = document.createElement("div");

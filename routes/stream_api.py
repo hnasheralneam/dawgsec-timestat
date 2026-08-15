@@ -41,6 +41,13 @@ SLEEP_STEP = 0.5
 HEARTBEAT_EVERY = 8    # heartbeat comment every 8 status ticks -> ~16s
 MAX_TICKS = 150        # ~5min, then close so the client reconnects (re-auths)
 STATUS_RESYNC_EVERY = 60  # refresh the client-side timer about every 60s
+# A new connection's "new starts" lookback window starts this far before
+# "now" rather than exactly at "now". Every reconnect (including the forced
+# one every MAX_TICKS) otherwise resets the window, silently dropping any
+# teammate-start event that lands during the brief reconnect gap. The
+# client already de-dupes by session_id, so a small overlap can't cause a
+# duplicate notification - it can only close this gap.
+COLLAB_RECONNECT_OVERLAP_SECONDS = 15
 
 
 @contextmanager
@@ -120,14 +127,20 @@ def _generate(user_id):
             status_sent = False
             if status_due:
                 with _fresh_db():
-                    # First tick: start at "now" so we don't replay old starts.
-                    collab_since = current_ts if last_collab_since is None else last_collab_since
+                    # First tick of a (re)connection: start slightly before
+                    # "now" rather than exactly "now" - see
+                    # COLLAB_RECONNECT_OVERLAP_SECONDS above.
+                    collab_since = (
+                        current_ts - COLLAB_RECONNECT_OVERLAP_SECONDS
+                        if last_collab_since is None
+                        else last_collab_since
+                    )
                     collab_since = max(
                         current_ts - config.COLLAB_SINCE_MAX_AGE_SECONDS,
                         min(collab_since, current_ts),
                     )
                     status_payload = payloads.build_status_payload(
-                        user_id, current_ts, collab_since, pop_alert=False
+                        user_id, current_ts, collab_since
                     )
                 last_collab_since = current_ts
                 status_signature = _status_signature(status_payload)
