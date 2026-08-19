@@ -42,8 +42,8 @@ npm run css:watch  # rebuild on change
 ```
 
 Charts (Chart.js) are lazy-loaded only on pages that render a `<canvas>`, and
-the "Material Icons Round" webfont is loaded non-blocking from Google Fonts;
-both are optional and degrade gracefully offline.
+the "Material Icons Round" webfont is self-hosted (`static/fonts/`); both are
+optional and degrade gracefully offline.
 
 ## Environment variables
 
@@ -71,7 +71,7 @@ All supported env values are in `deploy/timestat.env.example`.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `SECRET_KEY` | Yes | Flask session signing key |
-| `ADMIN_CODE` | No | Single admin login code. Auto-generated on first startup if unset, written back to `.env`, and printed to stderr/journal once. |
+| `ADMIN_CODE` | No | Single admin login code. Auto-generated on first startup if unset, written back to the same env file as `SECRET_KEY`, and printed to stderr/journal once. |
 | `SESSION_COOKIE_SECURE` | No | Set `true`/`1` to send session cookies only over HTTPS. **Leave unset or `false` for HTTP-only deployments (e.g., local testing, HTTP-accessible LAN) to prevent mobile login issues.** |
 | `FLASK_DEBUG` | No | Set `1` for debug mode when running `python app.py` |
 | `TZ` | No | IANA timezone name (e.g. `America/New_York`). Day/week boundaries in activity grids and analytics follow the **server's** timezone, not a per-user one - set this to match your team if the server's OS default (often UTC) doesn't. |
@@ -85,10 +85,10 @@ All supported env values are in `deploy/timestat.env.example`.
 ```
 
 This installs the app to `/opt/timestat`, creates a `timestat` system user,
-writes `/etc/timestat/timestat.env` with a generated `SECRET_KEY`, and installs
-+ starts the `timestat` systemd service. On first startup the service also
-generates an `ADMIN_CODE` and writes it back to the env file (watch the journal
-for the one-time printout). Requires `sudo`.
+writes `/etc/timestat/timestat.env` with both a generated `SECRET_KEY` and a
+generated `ADMIN_CODE`, and installs + starts the `timestat` systemd service.
+The admin code is printed once and lives in the same env file as `SECRET_KEY`,
+so credentials stay in one place. Requires `sudo`.
 
 Useful:
 
@@ -105,6 +105,11 @@ Service binds `127.0.0.1:8000` (put behind nginx/Caddy).
 - Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (UTC)
 - Backups older than 14 days are auto-removed
 - Sessions store `category_name` directly (stable historical labels)
+- **SSE scaling limit:** each live dashboard client holds one open stream
+  (`/api/stream`) that occupies a Gunicorn thread for its ~5 min lifetime.
+  The default service runs `--workers 3 --threads 16`, a hard ceiling of 48
+  concurrent live clients before new requests queue. Raise
+  `--workers`/`--threads` in `deploy/timestat.service` to fit your team size.
 
 ## Troubleshooting
 

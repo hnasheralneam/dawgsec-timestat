@@ -3,6 +3,7 @@ import os
 import secrets
 import sys
 import gzip
+import threading
 import time
 from datetime import timedelta
 
@@ -14,6 +15,8 @@ import config
 import db
 from auth import security
 from config import BASE_DIR, DB_PATH
+from services import live_cache
+from services import queries
 
 import routes.admin as routes_admin
 import routes.auth as routes_auth
@@ -275,7 +278,36 @@ def create_app() -> Flask:
         db.init_db()
         db.run_daily_maintenance()
 
+    _start_auto_pause_sweep(app)
+
     return app
+
+
+def _start_auto_pause_sweep(app: Flask) -> None:
+    """Run a daemon thread that auto-pauses running sessions past the 8h cap.
+
+    The cap used to be enforced inside get_active_session(), which is called
+    from read paths (/api/status, the SSE stream, build_status_payload) - so
+    a "status poll" mutated the DB. Moving it to a background sweep keeps
+    every read path pure while still capping sessions even when a team is
+    idle (no mutation ever fires). The sweep invalidates the live cache when
+    it pauses anything, so open SSE clients pick up the change on their next
+    tick.
+    """
+    db_path = app.config["DATABASE"]
+    interval = config.AUTO_PAUSE_SWEEP_INTERVAL_SECONDS
+
+    def _sweep() -> None:
+        while True:
+            time.sleep(interval)
+            try:
+                paused = queries.pause_overdue_running_sessions(db_path)
+                if paused:
+                    live_cache.invalidate()
+            except Exception:
+                logger.exception("Auto-pause sweep failed")
+
+    threading.Thread(target=_sweep, name="auto-pause-sweep", daemon=True).start()
 
 
 app = create_app()

@@ -24,14 +24,19 @@ sudo useradd --system --home /opt/timestat --shell /usr/sbin/nologin timestat ||
 if [ ! -f /etc/timestat/timestat.env ]; then
     sudo cp deploy/timestat.env.example /etc/timestat/timestat.env
     secret_key="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+    admin_code="$(python3 -c 'import secrets; print(secrets.token_urlsafe(15))')"
     sudo sed -i "s/^SECRET_KEY=.*/SECRET_KEY=${secret_key}/" /etc/timestat/timestat.env
-    echo "Created /etc/timestat/timestat.env with a generated SECRET_KEY."
-    echo "An ADMIN_CODE will be auto-generated on first startup (see journal)."
+    sudo sed -i "s/^ADMIN_CODE=.*/ADMIN_CODE=${admin_code}/" /etc/timestat/timestat.env
+    echo "Created /etc/timestat/timestat.env with a generated SECRET_KEY and ADMIN_CODE."
+    echo "Your admin code is: ${admin_code} (also saved in /etc/timestat/timestat.env)."
 else
     echo "/etc/timestat/timestat.env already exists, leaving it untouched."
 fi
+# Own the env file by the service user so the app can persist a regenerated
+# ADMIN_CODE into the SAME file (keeping SECRET_KEY and ADMIN_CODE together,
+# never split across two files). root can still read/write it via sudo.
 sudo chmod 640 /etc/timestat/timestat.env
-sudo chown root:timestat /etc/timestat/timestat.env
+sudo chown timestat:timestat /etc/timestat/timestat.env
 sudo chown -R timestat:www-data /opt/timestat
 
 sudo cp deploy/timestat.service /etc/systemd/system/timestat.service

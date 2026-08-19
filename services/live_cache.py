@@ -32,7 +32,15 @@ _collaboration_revision = None
 _collaboration_snapshot = None
 _digest_revision = None
 _digest_base = None
+_digest_epoch = None
 _user_digest_revisions = {}
+
+# The weekly digest's rolling 7-day window (since_ts) slides with wall-clock
+# time even when no one writes, so a cache keyed only on the DB revision goes
+# stale when the team is idle - sessions that aged out of the window stay on
+# the leaderboard until the next write. Recompute the digest whenever this
+# many seconds have elapsed, in addition to on revision change.
+_DIGEST_TTL_SECONDS = 60
 
 
 def _close_monitor() -> None:
@@ -48,11 +56,12 @@ atexit.register(_close_monitor)
 
 def _clear_snapshots() -> None:
     global _collaboration_revision, _collaboration_snapshot
-    global _digest_revision, _digest_base
+    global _digest_revision, _digest_base, _digest_epoch
     _collaboration_revision = None
     _collaboration_snapshot = None
     _digest_revision = None
     _digest_base = None
+    _digest_epoch = None
     _user_digest_revisions.clear()
 
 
@@ -135,11 +144,15 @@ def collaboration_snapshot(current_ts: int):
 
 
 def weekly_digest_base(current_ts: int, limit: int | None = 5):
-    """Return leaderboard/team totals once per revision, shared by SSE clients."""
-    global _digest_revision, _digest_base
+    """Return leaderboard/team totals once per revision OR time bucket, shared
+    by SSE clients. Recomputes when the DB revision changes or when the
+    coarse time bucket rolls over, so the rolling 7-day window (since_ts)
+    actually rolls even while the team is idle."""
+    global _digest_revision, _digest_base, _digest_epoch
     with _LOCK:
         current_revision = _revision_locked()
-        if _digest_revision != current_revision:
+        epoch = int(current_ts) // _DIGEST_TTL_SECONDS
+        if _digest_revision != current_revision or _digest_epoch != epoch:
             since_ts = current_ts - config.WEEK_SECONDS
             _digest_base = {
                 "leaderboard": queries.leaderboard_rows(current_ts, since_ts=since_ts),
@@ -149,6 +162,7 @@ def weekly_digest_base(current_ts: int, limit: int | None = 5):
                 "since_ts": since_ts,
             }
             _digest_revision = current_revision
+            _digest_epoch = epoch
             _user_digest_revisions.clear()
 
         rows = _digest_base["leaderboard"]
@@ -160,14 +174,16 @@ def weekly_digest_base(current_ts: int, limit: int | None = 5):
 
 
 def user_weekly_categories(user_id: int, current_ts: int):
-    """Return one user's weekly category totals once per DB revision."""
+    """Return one user's weekly category totals once per DB revision or time
+    bucket (kept consistent with weekly_digest_base's rolling window)."""
     with _LOCK:
         current_revision = _revision_locked()
+        epoch = int(current_ts) // _DIGEST_TTL_SECONDS
         cached = _user_digest_revisions.get(user_id)
-        if cached and cached[0] == current_revision:
-            return cached[1]
+        if cached and cached[0] == current_revision and cached[1] == epoch:
+            return cached[2]
 
         since_ts = current_ts - config.WEEK_SECONDS
         rows = queries.category_rows_for_user(user_id, current_ts, since_ts=since_ts)
-        _user_digest_revisions[user_id] = (current_revision, rows)
+        _user_digest_revisions[user_id] = (current_revision, epoch, rows)
         return rows

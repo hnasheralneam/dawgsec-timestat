@@ -8,6 +8,10 @@ User=timestat
 Group=www-data
 WorkingDirectory=/opt/timestat
 EnvironmentFile=/etc/timestat/timestat.env
+# SSE scaling limit: each open live stream (/api/stream) occupies one thread
+# for its whole ~5 min lifetime. --workers 3 --threads 16 => 3*16 = 48
+# concurrent live clients max; beyond that new requests queue. Raise
+# --workers/--threads to fit your team size.
 ExecStart=/opt/timestat/.venv/bin/gunicorn --workers 3 --threads 16 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=5

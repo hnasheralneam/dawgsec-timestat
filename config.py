@@ -35,6 +35,11 @@ LOGIN_ACCOUNT_MAX_ATTEMPTS = 12
 DEFAULT_RECENT_LIMIT = 10
 MAX_RECENT_LIMIT = 200
 MAX_SESSION_RUNNING_HOURS = 8
+# How often the background thread sweeps for running sessions that have
+# exceeded MAX_SESSION_RUNNING_HOURS and auto-pauses them. Kept off the
+# request read path (see services/queries.pause_overdue_running_sessions) so
+# a status poll / SSE tick never mutates the DB.
+AUTO_PAUSE_SWEEP_INTERVAL_SECONDS = 60
 # How far back the collaboration "new starts" feed (/api/status?collab_since=)
 # is allowed to look. A client can otherwise request a huge window and force a
 # large result set on every poll. Also bounded in rows by COLLAB_EVENT_LIMIT.
@@ -74,12 +79,15 @@ def load_env_file(path: str) -> None:
 
 
 # Candidate env files that ADMIN_CODE may be persisted to, in priority order.
-# <BASE_DIR>/.env covers local dev and same-dir deployments (deploy.sh copies
-# the repo to /opt/timestat, so BASE_DIR/.env resolves there). The /etc path
-# is the systemd deploy target written by deploy.sh.
+# /etc/timestat/timestat.env is the systemd deploy target - deploy.sh now
+# provisions BOTH SECRET_KEY and ADMIN_CODE there, and the service user owns
+# the file, so any runtime ADMIN_CODE regeneration lands in the same file as
+# SECRET_KEY (never split across two files). <BASE_DIR>/.env covers local dev
+# and same-dir deployments; it's only used when the /etc path is absent or
+# not writable.
 ADMIN_CODE_CANDIDATE_PATHS = (
-    os.path.join(BASE_DIR, ".env"),
     "/etc/timestat/timestat.env",
+    os.path.join(BASE_DIR, ".env"),
 )
 
 # Lines stripped from the chosen env file when ADMIN_CODE is written, so the

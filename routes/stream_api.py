@@ -11,15 +11,22 @@ checks a shared change revision and pushes:
 
 Notes
 -----
-* Each tick opens a *fresh* SQLite connection (rather than holding one open for
-  the lifetime of the stream) so long-lived readers don't block WAL
-  checkpointing. The connection is briefly swapped into ``flask.g`` so the
-  shared query layer (which calls ``db.get_db()``) sees it.
+* One SQLite connection is opened per stream and reused across ticks (swapped
+  into ``flask.g`` so the shared query layer sees it), then closed when the
+  stream ends. It is reopened every ``DB_REOPEN_EVERY`` ticks so no single
+  connection lives for the whole stream lifetime; this bounds connection age
+  without the per-tick open/close churn a fresh connection every tick caused.
+  SQLite's autocommit mode commits each read transaction, so reusing a
+  connection does not pin a long-lived read snapshot that would block WAL
+  checkpointing.
 * The stream self-closes after ``MAX_TICKS`` so EventSource reconnects with a
   fresh authentication cookie (bounds the window in which an expired session
   keeps receiving data).
-* Requires threaded Gunicorn workers (``--threads N``), because each open SSE
-  connection occupies a thread for its lifetime. See ``deploy/timestat.service``.
+* Scaling limit: each open SSE connection occupies one Gunicorn thread for its
+  whole ~5 min lifetime. With ``--workers 3 --threads 16`` that is a hard
+  ceiling of 3 * 16 = 48 concurrent live clients; new requests queue beyond
+  that. Raise ``--workers``/``--threads`` to fit your team size. See
+  ``deploy/timestat.service``.
 """
 
 import json
@@ -41,6 +48,10 @@ SLEEP_STEP = 0.5
 HEARTBEAT_EVERY = 8    # heartbeat comment every 8 status ticks -> ~16s
 MAX_TICKS = 150        # ~5min, then close so the client reconnects (re-auths)
 STATUS_RESYNC_EVERY = 60  # refresh the client-side timer about every 60s
+# Reopen the per-stream SQLite connection every this many ticks (~seconds) so
+# no single connection lives for the whole stream lifetime (bounds connection
+# age while avoiding a brand-new connection every tick).
+DB_REOPEN_EVERY = 60
 # A new connection's "new starts" lookback window starts this far before
 # "now" rather than exactly at "now". Every reconnect (including the forced
 # one every MAX_TICKS) otherwise resets the window, silently dropping any
@@ -50,21 +61,26 @@ STATUS_RESYNC_EVERY = 60  # refresh the client-side timer about every 60s
 COLLAB_RECONNECT_OVERLAP_SECONDS = 15
 
 
-@contextmanager
-def _fresh_db():
-    """Bind a brand-new SQLite connection to ``flask.g.db`` for the duration of
-    one snapshot, then close it. Restores any previously-bound connection."""
+def _open_db():
+    """Open a standalone SQLite connection for a stream (not ``g.db``)."""
     conn = sqlite3.connect(current_app.config["DATABASE"])
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    return conn
+
+
+@contextmanager
+def _bound_db(conn):
+    """Bind an existing connection to ``flask.g.db`` for the duration of one
+    snapshot, restoring any previously-bound connection. Does NOT close the
+    connection - the stream owns it and reuses it across ticks."""
     saved = g.pop("db", None)
     g.db = conn
     try:
         yield
     finally:
         g.pop("db", None)
-        conn.close()
         if saved is not None:
             g.db = saved
 
@@ -110,9 +126,13 @@ def _generate(user_id):
     last_status_revision = None
     last_digest_revision = None
     ticks = 0
+    conn = _open_db()
     try:
         while True:
             ticks += 1
+            if ticks > 1 and ticks % DB_REOPEN_EVERY == 0:
+                conn.close()
+                conn = _open_db()
             current_ts = db.now_ts()
             current_revision = live_cache.revision()
             status_due = (
@@ -126,7 +146,7 @@ def _generate(user_id):
 
             status_sent = False
             if status_due:
-                with _fresh_db():
+                with _bound_db(conn):
                     # First tick of a (re)connection: start slightly before
                     # "now" rather than exactly "now" - see
                     # COLLAB_RECONNECT_OVERLAP_SECONDS above.
@@ -154,7 +174,7 @@ def _generate(user_id):
                     last_status_signature = status_signature
 
             if digest_due:
-                with _fresh_db():
+                with _bound_db(conn):
                     digest = payloads.build_weekly_digest(user_id, current_ts, limit=5)
                 digest_signature = _digest_signature(digest)
                 last_digest_revision = current_revision
@@ -174,6 +194,8 @@ def _generate(user_id):
     except (GeneratorExit, ConnectionError, BrokenPipeError):
         # Client went away. Nothing to clean up beyond returning.
         return
+    finally:
+        conn.close()
 
 
 def register_routes(app):

@@ -145,7 +145,13 @@ class FixesTestCase(unittest.TestCase):
             conn.execute("UPDATE sessions SET start_ts = ? WHERE id = ?", (nine_hours_ago, session_id))
             conn.commit()
 
-        # Call /api/status endpoint and verify it triggers auto-pause and reports the alert
+        # The 8h cap is now enforced by a background sweep
+        # (pause_overdue_running_sessions), not by the read path - so drive
+        # the sweep directly, then verify /api/status reports the paused
+        # session and delivers the one-shot alert.
+        queries.pause_overdue_running_sessions(self.db_path)
+
+        # Call /api/status endpoint and verify it reports the auto-pause and alert
         status_resp = self.client.get("/api/status")
         self.assertEqual(status_resp.status_code, 200)
         status_data = status_resp.get_json()

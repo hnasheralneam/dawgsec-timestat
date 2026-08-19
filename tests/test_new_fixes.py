@@ -312,6 +312,11 @@ class AutoPauseAlertTests(TimeStatTestCase):
             )
             conn.commit()
 
+        # The 8h cap is enforced by the background sweep
+        # (pause_overdue_running_sessions), not by the read path - drive it
+        # directly, then two reads must deliver the alert exactly once.
+        queries.pause_overdue_running_sessions(self.db_path)
+
         first = self.client.get("/api/status").get_json()
         second = self.client.get("/api/status").get_json()
 
@@ -551,6 +556,51 @@ class AdminSessionControlTests(TimeStatTestCase):
         )
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/admin/login", resp.headers.get("Location", ""))
+
+
+class DeletedUserSessionGuardTests(TimeStatTestCase):
+    """login_required must reject a signed session cookie whose users row was
+    deleted by an admin - otherwise every page the victim visits 500s with a
+    TypeError until the cookie expires."""
+
+    def _admin_login(self, client):
+        page = client.get("/admin/login")
+        csrf = extract_csrf(page.data)
+        resp = client.post(
+            "/admin/login",
+            data={"code": "test-admin-code-12345", "csrf_token": csrf},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        return extract_csrf(client.get("/admin").data)
+
+    def test_deleted_users_cookie_is_rejected_not_500(self):
+        # self.client holds the victim's cookie (register auto-logs in).
+        self._register("victim")
+        self.assertEqual(self.client.get("/dashboard").status_code, 200)
+
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM users WHERE username = 'victim'"
+            ).fetchone()
+        self.assertIsNotNone(row)
+        victim_id = row[0]
+
+        # A separate client acts as admin and deletes the victim's row.
+        admin = self.app.test_client()
+        admin_csrf = self._admin_login(admin)
+        resp = admin.post(
+            f"/admin/users/{victim_id}/delete",
+            data={"csrf_token": admin_csrf},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+
+        # The victim's cookie is now orphaned: the next request must bounce to
+        # login, not crash with a 500.
+        resp = self.client.get("/dashboard", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/login", resp.headers["Location"])
 
 
 if __name__ == "__main__":

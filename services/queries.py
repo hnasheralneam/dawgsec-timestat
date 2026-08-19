@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timedelta
 
 from flask import session
@@ -18,8 +19,15 @@ def get_current_user():
 
 
 def get_active_session(user_id: int):
+    """Return the caller's current active (running/paused) session, if any.
+
+    Pure read - never mutates the DB. The MAX_SESSION_RUNNING_HOURS cap is
+    enforced by the background sweep (pause_overdue_running_sessions), not by
+    this function, so a status poll / SSE tick can't sneak a write into a read
+    path.
+    """
     conn = db.get_db()
-    active = conn.execute(
+    return conn.execute(
         """
         SELECT *
         FROM sessions
@@ -30,36 +38,50 @@ def get_active_session(user_id: int):
         (user_id,),
     ).fetchone()
 
-    if active and active["status"] == "running":
-        current_ts = db.now_ts()
-        elapsed = current_ts - active["start_ts"] - active["paused_seconds"]
+
+def pause_overdue_running_sessions(db_path: str, current_ts: int | None = None) -> int:
+    """Auto-pause every running session that has exceeded MAX_SESSION_RUNNING_HOURS.
+
+    Runs from the background sweep thread (see app.py) on its own SQLite
+    connection - never from a request read path. Each newly-paused session
+    gets auto_pause_pending_alert=1, which the next status read claims
+    atomically (exactly-once alert delivery, unchanged). Returns the number
+    of sessions paused.
+    """
+    now = db.now_ts() if current_ts is None else current_ts
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000")
+    try:
         limit_seconds = config.MAX_SESSION_RUNNING_HOURS * 3600
-        if elapsed > limit_seconds:
-            pause_ts = active["start_ts"] + active["paused_seconds"] + limit_seconds
+        running = conn.execute(
+            "SELECT id, start_ts, paused_seconds FROM sessions WHERE status = 'running'"
+        ).fetchall()
+        paused = 0
+        for row in running:
+            if now - row["start_ts"] - row["paused_seconds"] <= limit_seconds:
+                continue
+            pause_ts = row["start_ts"] + row["paused_seconds"] + limit_seconds
             # The "you were auto-paused" alert is tracked as a DB column
-            # (auto_pause_pending_alert), not a Flask-session cookie flag -
-            # a cookie write made here isn't reliably persisted once an SSE
-            # response has started streaming (the Set-Cookie header is sent
-            # with the first chunk), which used to silently drop the alert
-            # whenever this ran from inside the stream rather than a normal
-            # REST request. A plain DB write works from either context.
+            # (auto_pause_pending_alert), not a Flask-session cookie flag - a
+            # cookie write isn't reliably persisted once an SSE response has
+            # started streaming (the Set-Cookie header is sent with the first
+            # chunk), which used to silently drop the alert. A plain DB write
+            # works from either context.
             cur = conn.execute(
                 """
                 UPDATE sessions
                 SET status = 'paused', pause_started_ts = ?, auto_pause_pending_alert = 1
                 WHERE id = ? AND status = 'running'
                 """,
-                (pause_ts, active["id"]),
+                (pause_ts, row["id"]),
             )
             if cur.rowcount > 0:
-                conn.commit()
-            else:
-                conn.rollback()
-            active = conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (active["id"],)
-            ).fetchone()
-
-    return active
+                paused += 1
+        conn.commit()
+        return paused
+    finally:
+        conn.close()
 
 
 def get_categories():

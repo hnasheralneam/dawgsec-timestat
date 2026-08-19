@@ -101,13 +101,31 @@ def user_login_clear_failures(username: str) -> None:
     auth_clear_failures(LOGIN_ACCOUNT_SCOPE, _account_key(username))
 
 
+def _unauthenticated():
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return redirect(url_for("login"))
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
         if "user_id" not in session:
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Unauthorized"}), 401
-            return redirect(url_for("login"))
+            return _unauthenticated()
+        # A deleted user's signed session cookie outlives its users row:
+        # admin_delete_user removes the row (and cascades sessions) but has no
+        # way to invalidate the victim's cookie, so login_required's old
+        # "user_id in session" check alone let a deleted user through and the
+        # page routes (which do user["id"] on queries.get_current_user() ==
+        # None) crashed with a TypeError 500 on every request until the cookie
+        # expired. Verify the row still exists; if not, clear the session so
+        # the victim is bounced to login instead of a broken page.
+        row = db.get_db().execute(
+            "SELECT 1 FROM users WHERE id = ?", (session["user_id"],)
+        ).fetchone()
+        if row is None:
+            session.clear()
+            return _unauthenticated()
         return fn(*args, **kwargs)
 
     return wrapped

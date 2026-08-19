@@ -33,7 +33,6 @@
     </div>
 
      <div id="sessionTracker" class="mt-4 neu-inset p-4 text-center">
-      <div id="actionMessage" class="text-sm text-gb-fg mb-1"></div>
       <div id="sessionLabel" class="session-title mt-1 text-gb-fg" title="No active session">
         <span id="sessionCategory" class="session-category">No active session</span>
         <span id="sessionNoteDisplay" class="session-note-display hidden"></span>
@@ -255,10 +254,7 @@
   }
 
   function setMessage(text, isError = false) {
-    const el = document.getElementById("actionMessage");
-    el.textContent = text || "";
-    el.classList.toggle("text-gb-red", isError);
-    el.classList.toggle("text-gb-green", !isError);
+    if (text) window.showToast(text, isError);
   }
 
   function flashError() {
