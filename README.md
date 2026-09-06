@@ -31,19 +31,28 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## Frontend build (Tailwind)
 
-`static/tailwind.css` is committed, so the server needs no Node/npm at runtime.
-It is compiled from `static/input.css` using the dev-only config in
+`static/app.css` is committed — a single stylesheet concatenating the compiled
+Tailwind output (`static/tailwind.css`) and the hand-written `static/style.css`
+— so the server needs no Node/npm at runtime and pages make one CSS request.
+Tailwind is compiled from `static/input.css` using the dev-only config in
 `tailwind.config.js` (content scanned from `templates/**/*.html`). If you add
-or change Tailwind utility classes in a template, rebuild it:
+or change Tailwind utility classes in a template **or edit `style.css`**,
+rebuild it:
 
 ```bash
-npm run css        # one-off, minified
-npm run css:watch  # rebuild on change
+npm run css        # one-off: compile Tailwind + regenerate app.css
+npm run css:watch  # recompile Tailwind on change (re-run css:merge for style.css edits)
 ```
 
 Charts (Chart.js) are lazy-loaded only on pages that render a `<canvas>`, and
 the "Material Icons Round" webfont is self-hosted (`static/fonts/`); both are
 optional and degrade gracefully offline.
+
+Static asset URLs carry a content-hash version parameter (`?v=...`) computed
+from the static directory at startup, so `/static/` is served with a
+year-long immutable cache and deploys always reach clients; the service
+worker's cache name is derived from the same hash — no manual cache-version
+bumping.
 
 ## Environment variables
 
@@ -97,12 +106,18 @@ sudo journalctl -u timestat -f --no-pager
 sudo systemctl restart timestat
 ```
 
-Service binds `127.0.0.1:8000` (put behind nginx/Caddy).
+Service binds `127.0.0.1:8000` (put behind nginx/Caddy). See
+`deploy/Caddyfile` for a ready-to-adapt Caddy example — it enables response
+compression and, importantly, sets `flush_interval -1` on the proxy so the
+SSE live-update stream isn't buffered.
 
 ## Ops notes
 
 - DB file: `timestat.db` (auto-created)
-- Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (UTC)
+- Daily automatic DB backups: `backups/timestat-YYYYMMDD-HHMMSS.db` (local
+  server time), produced by the background sweep thread (never blocks a
+  request; runs once per day per machine via a lock file, even with multiple
+  Gunicorn workers and on days with no requests)
 - Backups older than 14 days are auto-removed
 - Sessions store `category_name` directly (stable historical labels)
 - **SSE scaling limit:** each live dashboard client holds one open stream

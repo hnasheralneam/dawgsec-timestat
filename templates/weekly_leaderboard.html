@@ -210,6 +210,10 @@
     if (!document.hidden) scheduledWeeklyRefresh();
   });
 
-  loadWeeklyLeaderboard().catch(() => {});
+  // common.js is deferred (see base.html); wait for DOMContentLoaded so the
+  // real ensureCharts is in place before the first bar chart paints.
+  document.addEventListener("DOMContentLoaded", () => {
+    loadWeeklyLeaderboard().catch(() => {});
+  });
 </script>
 {% endblock %}

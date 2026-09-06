@@ -7,6 +7,11 @@ from flask import current_app, g
 
 import config
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX dev environments
+    fcntl = None
+
 
 def now_ts() -> int:
     return int(datetime.now(timezone.utc).timestamp())
@@ -198,9 +203,46 @@ def prune_auth_attempts(cutoff_ts: int) -> None:
 
 
 def run_daily_maintenance() -> None:
+    """Run the daily backup + auth-attempt prune at most once per local day,
+    per machine.
+
+    Coordination is a lock file plus a marker file in the backups directory,
+    not per-process state: with Gunicorn's multiple worker processes (each
+    running its own background sweep thread), only the process that holds the
+    lock performs the work, and the marker prevents a restart from re-running
+    it later on the same day. This used to be called from a before_request
+    hook, which paid the backup latency inside the day's first request,
+    raced between workers, and skipped the backup entirely on a day with no
+    requests; the background sweep now calls this continuously instead.
+    """
+    backup_dir = os.path.join(config.BASE_DIR, "backups")
+    os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+    os.chmod(backup_dir, 0o700)
     today = datetime.now().astimezone().date().isoformat()
-    if current_app.config.get("_MAINTENANCE_LAST_RUN_DAY") == today:
-        return
-    current_app.config["_MAINTENANCE_LAST_RUN_DAY"] = today
-    run_daily_database_backup(current_app.config["DATABASE"], config.BASE_DIR)
-    prune_auth_attempts(now_ts() - config.AUTH_WINDOW_SECONDS)
+    lock_path = os.path.join(backup_dir, ".maintenance.lock")
+    marker_path = os.path.join(backup_dir, ".maintenance-last-run")
+
+    lock_file = open(lock_path, "a+")
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                # Another worker process is running maintenance right now.
+                return
+        try:
+            try:
+                with open(marker_path, "r") as f:
+                    if f.read().strip() == today:
+                        return
+            except FileNotFoundError:
+                pass
+            run_daily_database_backup(current_app.config["DATABASE"], config.BASE_DIR)
+            prune_auth_attempts(now_ts() - config.AUTH_WINDOW_SECONDS)
+            with open(marker_path, "w") as f:
+                f.write(today)
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+    finally:
+        lock_file.close()

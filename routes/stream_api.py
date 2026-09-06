@@ -48,6 +48,14 @@ SLEEP_STEP = 0.5
 HEARTBEAT_EVERY = 8    # heartbeat comment every 8 status ticks -> ~16s
 MAX_TICKS = 150        # ~5min, then close so the client reconnects (re-auths)
 STATUS_RESYNC_EVERY = 60  # refresh the client-side timer about every 60s
+# Re-push the digest about this often even when no DB write bumped the
+# revision. Leaderboard "seconds" include the live elapsed of running
+# sessions, which advances with wall-clock time, so a revision-only gate
+# freezes the leaderboard while the team is idle until someone acts. The
+# signature check still suppresses the push when nothing is actually moving
+# (no running sessions), and the cost is bounded because live_cache
+# TTL-buckets digest recomputation.
+DIGEST_RESYNC_EVERY = 30
 # Reopen the per-stream SQLite connection every this many ticks (~seconds) so
 # no single connection lives for the whole stream lifetime (bounds connection
 # age while avoiding a brand-new connection every tick).
@@ -141,7 +149,9 @@ def _generate(user_id):
                 or ticks % STATUS_RESYNC_EVERY == 0
             )
             digest_due = (
-                last_digest_revision is None or current_revision != last_digest_revision
+                last_digest_revision is None
+                or current_revision != last_digest_revision
+                or ticks % DIGEST_RESYNC_EVERY == 0
             )
 
             status_sent = False

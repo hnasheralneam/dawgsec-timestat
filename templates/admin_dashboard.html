@@ -297,8 +297,13 @@
       if (requestSequence !== taskRequestSequence || state.activeUserId !== requestedUserId) return;
       state.tasks = data.tasks || [];
       renderTaskRows();
-      syncUserTaskSummary();
-      setTaskModalMessage(`Loaded ${state.tasks.length} tasks.`);
+      // The row summary counts are only accurate while the response isn't
+      // truncated - when it is, leave the server-rendered counts in place
+      // rather than overwriting them with counts over the first page only.
+      if (state.tasks.length === (data.total ?? state.tasks.length)) {
+        syncUserTaskSummary();
+      }
+      setTaskMessageTruncated(data);
     } catch (err) {
       if (err.name === "AbortError") return;
       if (requestSequence !== taskRequestSequence || state.activeUserId !== requestedUserId) return;
@@ -307,6 +312,18 @@
       renderTaskRows();
     } finally {
       if (requestSequence === taskRequestSequence) taskRequestController = null;
+    }
+  }
+
+  function setTaskMessageTruncated(data) {
+    const total = data.total;
+    if (Number.isInteger(total) && state.tasks.length < total) {
+      setTaskModalMessage(
+        `Loaded the ${state.tasks.length} most recent of ${total} tasks.`,
+        false
+      );
+    } else {
+      setTaskModalMessage(`Loaded ${state.tasks.length} tasks.`);
     }
   }
 

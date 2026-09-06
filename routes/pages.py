@@ -1,4 +1,4 @@
-from flask import flash, redirect, render_template, url_for
+from flask import flash, make_response, redirect, render_template, url_for
 
 import db
 from services import payloads, queries
@@ -73,4 +73,16 @@ def register_routes(app):
 
     @app.route("/service-worker.js")
     def service_worker():
-        return app.send_static_file("js/service-worker.js")
+        # Rendered as a template so the SW's cache name is the server-computed
+        # static content hash (app.config["STATIC_VERSION"]): a deploy that
+        # changes any asset yields a new SW, which installs with new versioned
+        # asset URLs. Served uncacheable so browsers pick up the new SW on
+        # their next navigation instead of after the old header expires.
+        response = make_response(
+            render_template(
+                "service-worker.js", cache_version=app.config["STATIC_VERSION"]
+            )
+        )
+        response.headers["Content-Type"] = "application/javascript"
+        response.headers["Cache-Control"] = "no-cache"
+        return response

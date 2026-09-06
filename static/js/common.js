@@ -120,7 +120,10 @@
     if (chartLoadPromise) return chartLoadPromise;
     chartLoadPromise = new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = "/static/vendor/chart.umd.min.js";
+      // Version the URL with the server-computed static content hash (set in
+      // base.html) so a deploy busts the browser/proxy caches for the bundle.
+      s.src = "/static/vendor/chart.umd.min.js" +
+        (window.TIMESTAT_STATIC_V ? `?v=${encodeURIComponent(window.TIMESTAT_STATIC_V)}` : "");
       s.async = true;
       s.onload = () => resolve();
       s.onerror = () => {

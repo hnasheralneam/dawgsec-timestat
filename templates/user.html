@@ -700,17 +700,21 @@
     });
   });
 
-  paintActivityLegend();
-  loadPageData().catch(async (err) => {
-    if (err.name === "AbortError") return;
-    if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
-      window.location.href = "/login";
-      return;
-    }
-    document.getElementById("activityEmpty").classList.remove("hidden");
-    document.getElementById("categoryEmpty").classList.remove("hidden");
-    document.getElementById("dailyTrendEmpty").classList.remove("hidden");
-    document.getElementById("recentEmpty").classList.remove("hidden");
+  // common.js is deferred (see base.html); wait for DOMContentLoaded so the
+  // real ensureCharts/themeColors are in place before the first paint.
+  document.addEventListener("DOMContentLoaded", () => {
+    paintActivityLegend();
+    loadPageData().catch(async (err) => {
+      if (err.name === "AbortError") return;
+      if (err.message === "Unauthorized" || err.message?.includes("Unauthorized")) {
+        window.location.href = "/login";
+        return;
+      }
+      document.getElementById("activityEmpty").classList.remove("hidden");
+      document.getElementById("categoryEmpty").classList.remove("hidden");
+      document.getElementById("dailyTrendEmpty").classList.remove("hidden");
+      document.getElementById("recentEmpty").classList.remove("hidden");
+    });
   });
 </script>
 {% endblock %}

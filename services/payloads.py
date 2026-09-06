@@ -71,6 +71,14 @@ def build_status_payload(user_id, current_ts, collab_since_ts):
             "status": active["status"],
             "elapsed_seconds": helpers.elapsed_seconds(active, current_ts),
             "start_ts": active["start_ts"],
+            # Included so SSE change detection notices adjusts: an adjust only
+            # moves paused_seconds, which shifts the baseline the client's
+            # locally-derived elapsed timer counts up from. Without it the
+            # status signature (which strips elapsed_seconds as locally
+            # derivable) wouldn't change, and other devices would keep
+            # counting from the pre-adjust baseline until the next forced
+            # resync (~60s) - displaying time the server had already removed.
+            "paused_seconds": int(active["paused_seconds"] or 0),
         }
     return payload
 

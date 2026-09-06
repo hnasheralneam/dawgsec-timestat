@@ -4,16 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <link rel="manifest" href="{{ static_v('manifest.json') }}">
   <title>{{ title or "TimeStat" }}</title>
   <script>
+    // Content-hash version of the static assets (see app.py); common.js uses
+    // it to version its own lazy-loaded bundles (Chart.js).
+    window.TIMESTAT_STATIC_V = {{ config.STATIC_VERSION|tojson }};
     window.__SERVER_THEME__ = {% if user %}{ palette: {{ (user.theme_palette or "gruvbox")|tojson }}, color: {{ (user.theme_custom_color or "#458588")|tojson }} }{% else %}null{% endif %};
   </script>
-  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-  <link rel="preload" href="{{ url_for('static', filename='fonts/material-symbols-rounded.woff2') }}" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
-  <link rel="icon" href="{{ url_for('static', filename='logo.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ static_v('js/theme.js') }}"></script>
+  <link rel="preload" href="{{ static_v('fonts/material-symbols-rounded.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="icon" href="{{ static_v('logo.svg') }}" type="image/svg+xml">
+  {# app.css is the committed concatenation of tailwind.css + style.css (npm run css) - one render-blocking request instead of two. #}
+  <link rel="stylesheet" href="{{ static_v('app.css') }}">
   <script>
     // Keep tiny, non-optional display data available even if the shared asset
     // is unavailable on a flaky connection. common.js replaces this value.
@@ -64,7 +67,12 @@
     window.renderOrUpdateChart = window.renderOrUpdateChart || (() => null);
     window.showAppConfirm = window.showAppConfirm || ((message) => Promise.resolve(window.confirm(message)));
   </script>
-  <script src="{{ url_for('static', filename='js/common.js') }}" onerror="window.__timestatCommonLoadFailed = true;"></script>
+  {# Deferred so its download can't block first paint. The fallback shims
+     above keep inline handlers working until it runs; a deferred script is
+     guaranteed to execute before DOMContentLoaded fires, so page entry
+     points that need the real implementations (notably ensureCharts) must
+     start from a DOMContentLoaded listener, not at parse time. #}
+  <script src="{{ static_v('js/common.js') }}" defer onerror="window.__timestatCommonLoadFailed = true;"></script>
 </head>
 <body class="min-h-screen">
   <div class="app-shell max-w-6xl mx-auto px-4 py-6">

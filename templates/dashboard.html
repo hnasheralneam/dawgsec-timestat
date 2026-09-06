@@ -544,6 +544,9 @@
   // to stay open via SSE rather than reload) on a busy team would grow this
   // Set for as long as the tab stays open.
   const SHOWN_START_NOTIFICATIONS_LIMIT = 500;
+  // How far the server's elapsed time may differ from the local ticker on a
+  // passive resync before the local display snaps to the server value.
+  const TIMER_RESYNC_TOLERANCE_SECONDS = 3;
   function rememberStartNotification(sessionId) {
     state.shownStartNotifications.add(sessionId);
     state.shownStartNotificationsOrder.push(sessionId);
@@ -574,9 +577,18 @@
 
     state.current = data.current_session;
     if (passive && sameRunningSession) {
-      // Passive resyncs (SSE push, background poll) must never visibly
-      // rewind a running timer - only genuine user actions can move it down.
-      state.timerBase = Math.max(state.timerBase, data.current_session.elapsed_seconds);
+      // Passive resyncs (SSE push, background poll) keep the smooth local
+      // ticker while the server roughly agrees with it - second-granularity
+      // timestamps plus network latency make small differences noise. The
+      // server is still the source of truth: adopt its value whenever it
+      // drifts beyond the tolerance, in either direction. A max()-only rule
+      // could never correct downward after another device adjusts the
+      // session (or an admin fixes it), leaving this device displaying more
+      // elapsed time than the server's truth indefinitely.
+      const serverElapsed = data.current_session.elapsed_seconds;
+      if (Math.abs(serverElapsed - state.timerBase) > TIMER_RESYNC_TOLERANCE_SECONDS) {
+        state.timerBase = serverElapsed;
+      }
     } else {
       state.timerBase = state.current ? state.current.elapsed_seconds : 0;
     }
@@ -913,6 +925,13 @@
     document.getElementById("editNote").focus();
   }
 
+  // How many leading rows of state.recentSessions are currently rendered in
+  // the table. When a refresh only appends (e.g. "Load more", or a refresh
+  // that adds nothing at the front), only the new tail is appended instead
+  // of rebuilding every row.
+  let recentRenderedCount = 0;
+  let recentListenersAttached = false;
+
   function renderRecent(sessions) {
     const tbody = document.getElementById("recentBody");
     const empty = document.getElementById("recentEmpty");
@@ -921,16 +940,10 @@
 
     const serialized = JSON.stringify(visibleSessions);
     if (serialized === state.lastRenderedRecentJson) return;
-    state.lastRenderedRecentJson = serialized;
 
-    tbody.innerHTML = "";
-    if (!visibleSessions.length) {
-      empty.classList.remove("hidden");
-      return;
-    }
-    empty.classList.add("hidden");
-
-    for (const s of visibleSessions) {
+    // Listeners are delegated to <tbody> once (see below), so rebuilding
+    // rows never re-attaches them.
+    const appendRow = (s) => {
       const safeCategoryName = escapeHtml(s.category_name || "");
       const safeNote = escapeHtml(s.note || "");
       const safeStart = escapeHtml(tsToLocal(s.start_ts));
@@ -954,28 +967,56 @@
         </td>
       `;
       tbody.appendChild(tr);
+    };
+
+    if (!visibleSessions.length) {
+      tbody.innerHTML = "";
+      recentRenderedCount = 0;
+      empty.classList.remove("hidden");
+      state.lastRenderedRecentJson = serialized;
+      return;
     }
 
-    tbody.querySelectorAll("[data-edit-session-id]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const sessionId = Number(btn.getAttribute("data-edit-session-id"));
-        openEditPanel(sessionId);
-      });
-    });
+    // The previously rendered rows are a prefix of the new list exactly when
+    // its JSON is the old JSON with "]" swapped for "," - a purely textual
+    // check because JSON.stringify of the array is deterministic.
+    const isPrefixExtension =
+      recentRenderedCount > 0 &&
+      visibleSessions.length > recentRenderedCount &&
+      serialized.startsWith(state.lastRenderedRecentJson.slice(0, -1) + ",");
+    if (!isPrefixExtension) {
+      tbody.innerHTML = "";
+      recentRenderedCount = 0;
+    }
+    empty.classList.add("hidden");
 
-    tbody.querySelectorAll("[data-delete-session-id]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const sessionId = Number(btn.getAttribute("data-delete-session-id"));
+    for (let i = recentRenderedCount; i < visibleSessions.length; i++) {
+      appendRow(visibleSessions[i]);
+    }
+    recentRenderedCount = visibleSessions.length;
+    state.lastRenderedRecentJson = serialized;
+
+    if (!recentListenersAttached) {
+      recentListenersAttached = true;
+      tbody.addEventListener("click", async (e) => {
+        const editBtn = e.target instanceof Element && e.target.closest("[data-edit-session-id]");
+        if (editBtn) {
+          openEditPanel(Number(editBtn.getAttribute("data-edit-session-id")));
+          return;
+        }
+        const deleteBtn = e.target instanceof Element && e.target.closest("[data-delete-session-id]");
+        if (!deleteBtn) return;
+        const sessionId = Number(deleteBtn.getAttribute("data-delete-session-id"));
         if (!await window.showAppConfirm("Delete this past session?")) return;
         try {
-           await postJson("/api/session/delete", { session_id: sessionId });
-           setMessage("Past session removed.");
-           await refreshHistory();
+          await postJson("/api/session/delete", { session_id: sessionId });
+          setMessage("Past session removed.");
+          await refreshHistory();
         } catch (err) {
           setMessage(err.message, true);
         }
       });
-    });
+    }
   }
 
   let recentRequestController = null;
@@ -1276,6 +1317,9 @@
   // 10s. Daily-trend and recent-sessions stay on a slower poll below. If SSE
   // is unavailable (older browser) we fall back to the original polling.
   let stream = null;
+  // Set once a status fetch has been fired for the current disconnect
+  // episode; reset on "open" so each outage costs at most one extra request.
+  let sseFetchedOnDisconnect = false;
   function initStream() {
     if (typeof EventSource === "undefined") return false;
     try {
@@ -1307,7 +1351,11 @@
     stream.onerror = () => {
       // EventSource auto-reconnects with backoff. While disconnected, fall back
       // to a one-off fetch so the UI doesn't freeze; the next open event
-      // resumes push updates.
+      // resumes push updates. Fire at most once per disconnect episode: a dead
+      // network makes onerror fire on every reconnect attempt (~every 3s), and
+      // a status request per attempt would stack on top of the fallback poll.
+      if (sseFetchedOnDisconnect) return;
+      sseFetchedOnDisconnect = true;
       loadStatus().catch(() => {});
     };
     return true;
@@ -1358,6 +1406,13 @@
     };
     document.addEventListener("visibilitychange", weeklyPollVisibleHandler);
   }
+  function stopWeeklyPolling() {
+    if (weeklyPoll) { clearInterval(weeklyPoll); weeklyPoll = null; }
+    if (weeklyPollVisibleHandler) {
+      document.removeEventListener("visibilitychange", weeklyPollVisibleHandler);
+      weeklyPollVisibleHandler = null;
+    }
+  }
 
   function seedInitialData() {
     applyStatus(initialData.status);
@@ -1405,29 +1460,45 @@
 
     if (initStream()) {
       // SSE is up; pause status polling. It resumes only on stream error.
+      // The weekly leaderboard/stats poll follows the same lifecycle: while
+      // the stream is healthy the digest pushes (including its periodic
+      // resync) keep those sections fresh, so the poll only runs while SSE
+      // is down rather than redundantly every 3 minutes per open tab.
       let sseOpen = false;
-      stream.addEventListener("open", () => { sseOpen = true; stopStatusPolling(); });
+      stream.addEventListener("open", () => {
+        sseOpen = true;
+        sseFetchedOnDisconnect = false;
+        stopStatusPolling();
+        stopWeeklyPolling();
+      });
       stream.addEventListener("error", () => {
-        if (sseOpen) { sseOpen = false; startStatusPolling(); }
+        if (sseOpen) {
+          sseOpen = false;
+          startStatusPolling();
+          startWeeklyPolling();
+        }
       });
     } else {
       // No SSE support: fall back to polling for the live sections too.
       startStatusPolling();
+      startWeeklyPolling();
       if (!initialData) {
         loadWeeklyLeaderboard().catch(() => {});
         loadStats().catch(() => {});
       }
     }
-    // Keep the weekly leaderboard fresh even without SSE or when the
-    // digest misses a TTL drift. Poll every few minutes and on refocus.
-    startWeeklyPolling();
   }
 
-  bootstrap().catch((err) => {
-    // A broken optional widget must not leave the session controls unusable.
-    console.error("Dashboard bootstrap failed", err);
-    startStatusPolling();
-    loadStatus().catch(() => {});
+  // common.js is deferred (see base.html); DOMContentLoaded is guaranteed to
+  // fire after it executes, so the real ensureCharts/renderOrUpdateChart are
+  // in place by the time bootstrap seeds the initial charts.
+  document.addEventListener("DOMContentLoaded", () => {
+    bootstrap().catch((err) => {
+      // A broken optional widget must not leave the session controls unusable.
+      console.error("Dashboard bootstrap failed", err);
+      startStatusPolling();
+      loadStatus().catch(() => {});
+    });
   });
 
   // History and the daily trend refresh after a local data change (finish,

@@ -269,12 +269,16 @@
     analyticsRequestController = null;
   }
 
-  loadAnalytics().catch((err) => {
-    if (err.name === "AbortError") return;
-    const btn = document.getElementById("refreshAnalyticsBtn");
-    btn.classList.add("flash-error");
-    btn.setAttribute("data-tooltip", err.message || "Could not load analytics");
-    showLoadError(err.message || "Could not load analytics.");
+  // common.js is deferred (see base.html); wait for DOMContentLoaded so the
+  // real ensureCharts is in place before the first charts paint.
+  document.addEventListener("DOMContentLoaded", () => {
+    loadAnalytics().catch((err) => {
+      if (err.name === "AbortError") return;
+      const btn = document.getElementById("refreshAnalyticsBtn");
+      btn.classList.add("flash-error");
+      btn.setAttribute("data-tooltip", err.message || "Could not load analytics");
+      showLoadError(err.message || "Could not load analytics.");
+    });
   });
   document.getElementById("refreshAnalyticsBtn").addEventListener("click", () => {
     loadAnalytics().catch((err) => {

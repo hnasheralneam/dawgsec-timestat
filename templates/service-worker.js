@@ -7,16 +7,21 @@
 //   * Navigation (HTML document) requests -> network-first, falling back to a
 //     cached copy of the dashboard shell so a reload while offline still works.
 //   * Everything else (API, SSE, auth POSTs) -> passthrough; never cached.
+//
+// CACHE_VERSION is the server-computed content hash of the static directory
+// (see app.py _compute_static_version), injected when this file is served.
+// A deploy that changes any asset therefore produces a new cache name AND new
+// versioned asset URLs together - no hand-bumping required.
 
-const CACHE_VERSION = "timestat-cache-v7";
+const CACHE_VERSION = "timestat-cache-{{ cache_version }}";
+const ASSET_VERSION = "{{ cache_version }}";
 const CORE_ASSETS = [
-  "/static/style.css",
-  "/static/tailwind.css",
-  "/static/js/common.js",
-  "/static/js/theme.js",
-  "/static/manifest.json",
-  "/static/logo.svg",
-  "/static/fonts/material-symbols-rounded.woff2",
+  "/static/app.css?v=" + ASSET_VERSION,
+  "/static/js/common.js?v=" + ASSET_VERSION,
+  "/static/js/theme.js?v=" + ASSET_VERSION,
+  "/static/manifest.json?v=" + ASSET_VERSION,
+  "/static/logo.svg?v=" + ASSET_VERSION,
+  "/static/fonts/material-symbols-rounded.woff2?v=" + ASSET_VERSION,
 ];
 
 self.addEventListener("install", (event) => {

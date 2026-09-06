@@ -3,7 +3,7 @@ from flask import jsonify, request, session
 import config
 import db
 from utils import parsing
-from services import queries
+from services import live_cache, queries
 from auth import security
 
 
@@ -12,8 +12,11 @@ def register_routes(app):
     @security.login_required
     def api_leaderboard():
         current_ts = db.now_ts()
+        # All-time rows are an unbounded aggregate scan; serve them from the
+        # revision+TTL cache (shared across clients and recomputed at most
+        # once per write/minute per worker) instead of scanning per request.
         return jsonify(
-            {"leaderboard": queries.leaderboard_rows(current_ts), "server_ts": current_ts}
+            {"leaderboard": live_cache.all_time_leaderboard(current_ts), "server_ts": current_ts}
         )
 
     @app.get("/api/leaderboard/weekly")
@@ -42,8 +45,11 @@ def register_routes(app):
     def api_stats():
         current_ts = db.now_ts()
         user_id = int(session["user_id"])
-        my_rows = queries.category_rows_for_user(user_id, current_ts)
-        team_rows = queries.category_rows_for_user(None, current_ts)
+        # All-time rows come from the revision+TTL cache (see
+        # api_leaderboard); the weekly rows are a bounded 7-day query and
+        # stay uncached.
+        my_rows = live_cache.user_all_time_categories(user_id, current_ts)
+        team_rows = live_cache.team_all_time_categories(current_ts)
         since_ts = current_ts - config.WEEK_SECONDS
         my_week_rows = queries.category_rows_for_user(user_id, current_ts, since_ts=since_ts)
         team_week_rows = queries.category_rows_for_user(None, current_ts, since_ts=since_ts)
@@ -90,7 +96,7 @@ def register_routes(app):
         target_user = queries.get_user_by_id(user_id)
         if not target_user:
             return jsonify({"error": "User not found"}), 404
-        rows = queries.category_rows_for_user(user_id, db.now_ts())
+        rows = live_cache.user_all_time_categories(user_id, db.now_ts())
         return jsonify(
             {
                 "user": {"id": target_user["id"], "username": target_user["username"]},

@@ -1,0 +1,29 @@
+# Example Caddyfile for running TimeStat behind Caddy.
+#
+# Caddy automatically provisions TLS certificates and compresses responses
+# (zstd/gzip), so once this proxy is in front of the app most responses leave
+# Caddy compressed even though the Flask app itself only gzips JSON/HTML.
+# Static assets under /static/ carry a content-hash ?v= parameter and a
+# year-long immutable Cache-Control header set by the app; Caddy's cache is
+# therefore safe to configure aggressively if desired.
+#
+# Adjust the site address (here: timestat.example.com) and the file paths for
+# your certificate setup as needed.
+
+timestat.example.com {
+	# Compress all compressible responses (Caddy does this automatically for
+	# text types; listed here for clarity). This covers what the in-app gzip
+	# middleware handles and more, with cheaper CPU on repeated hits.
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:8000 {
+		# SSE (/api/stream) is a long-lived streaming response. A zero
+		# flush_interval makes Caddy flush each chunk to the client
+		# immediately instead of buffering, which the live dashboard
+		# depends on.
+		flush_interval -1
+		health_uri /login
+		health_interval 30s
+		health_timeout 5s
+	}
+}

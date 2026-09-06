@@ -3,6 +3,7 @@ import os
 import secrets
 import sys
 import gzip
+import hashlib
 import threading
 import time
 from datetime import timedelta
@@ -29,6 +30,33 @@ import routes.user_api as routes_user_api
 logger = logging.getLogger("timestat")
 
 
+def _compute_static_version(static_dir: str) -> str:
+    """Content-hash every static asset so a deploy automatically busts
+    browser and service-worker caches.
+
+    Templates append this version to static URLs (?v=...), which lets
+    /static/ be served with a year-long immutable cache without ever
+    shipping stale assets. This replaces the old scheme where a hand-edited
+    CACHE_VERSION string in the service worker had to be bumped in lockstep
+    with every asset change. Hashing ~300KB of assets at startup is
+    negligible, and each Gunicorn worker computes the same value.
+    """
+    digest = hashlib.sha256()
+    found = False
+    for root, _dirs, files in os.walk(static_dir):
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+            except OSError:
+                continue
+            found = True
+            digest.update(os.path.relpath(path, static_dir).encode("utf-8"))
+            digest.update(data)
+    return digest.hexdigest()[:12] if found else "0"
+
+
 def create_app() -> Flask:
     config.load_env_file(os.path.join(BASE_DIR, ".env"))
     config.load_env_file("/etc/timestat/timestat.env")
@@ -43,6 +71,14 @@ def create_app() -> Flask:
         time.tzset()
 
     app = Flask(__name__)
+    app.config["STATIC_VERSION"] = _compute_static_version(app.static_folder)
+
+    @app.template_global()
+    def static_v(filename):
+        """Static URL with a content-hash version parameter (?v=...), so the
+        year-long immutable cache on /static/ is safe: any asset change
+        produces new URLs everywhere it is referenced."""
+        return url_for("static", filename=filename, v=app.config["STATIC_VERSION"])
 
     debug_mode = os.environ.get("FLASK_DEBUG", "").strip() == "1"
     secret_key = os.environ.get("SECRET_KEY")
@@ -136,10 +172,6 @@ def create_app() -> Flask:
         }
 
     @app.before_request
-    def enforce_daily_maintenance():
-        db.run_daily_maintenance()
-
-    @app.before_request
     def enforce_csrf():
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
             return None
@@ -188,10 +220,13 @@ def create_app() -> Flask:
             "object-src 'none'",
         )
         if request.path.startswith("/static/"):
-            # Static assets are content-addressed-ish (bumped together with the
-            # service-worker cache version); a long cache helps repeat visits
-            # while the service worker revalidates in the background.
-            response.headers.setdefault("Cache-Control", "public, max-age=86400")
+            # Static URLs carry a content-hash version parameter (see
+            # static_v), so a new deploy means new URLs. Content is therefore
+            # effectively immutable and can be cached for a year, by both the
+            # browser and any reverse proxy in front of the app. Set (not
+            # setdefault): send_file already emits "Cache-Control: no-cache"
+            # for the versioned asset, which must be overridden.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
     @app.after_request
@@ -234,11 +269,34 @@ def create_app() -> Flask:
         compressed = gzip.compress(body, compresslevel=6)
         if len(compressed) >= len(body):
             return response
+        # The original send_file ETag identifies the uncompressed bytes, but
+        # this response is now the compressed byte stream - replace it with a
+        # weak ETag over the compressed bytes (deterministic for a given body
+        # at this fixed compression level). Without this the old code dropped
+        # the ETag entirely and no compressed response could ever 304, forcing
+        # full re-downloads on every hard reload.
+        gzip_etag = f'W/"gzip-{hashlib.md5(compressed).hexdigest()}"'
+        if (
+            request.method in {"GET", "HEAD"}
+            and response.status_code == 200
+            and gzip_etag in request.headers.get("If-None-Match", "")
+        ):
+            # Revalidation hit: the client already holds exactly these
+            # compressed bytes. The 304 decision normally happens inside
+            # send_file against the uncompressed ETag, which can never match,
+            # so it is handled here instead - after the compressed bytes are
+            # known but before they are sent.
+            response.status_code = 304
+            response.set_data(b"")
+            response.headers["ETag"] = gzip_etag
+            response.headers.pop("Content-Encoding", None)
+            response.headers.pop("Content-Type", None)
+            response.headers["Content-Length"] = "0"
+            return response
         response.set_data(compressed)
         response.headers["Content-Encoding"] = "gzip"
         response.headers["Content-Length"] = str(len(compressed))
-        # The original send_file ETag identifies the uncompressed bytes.
-        response.headers.pop("ETag", None)
+        response.headers["ETag"] = gzip_etag
         vary = response.headers.get("Vary")
         response.headers["Vary"] = (
             f"{vary}, Accept-Encoding" if vary and "accept-encoding" not in vary.lower()
@@ -284,7 +342,8 @@ def create_app() -> Flask:
 
 
 def _start_auto_pause_sweep(app: Flask) -> None:
-    """Run a daemon thread that auto-pauses running sessions past the 8h cap.
+    """Run a daemon thread that auto-pauses running sessions past the 8h cap
+    and drives daily maintenance off the request path.
 
     The cap used to be enforced inside get_active_session(), which is called
     from read paths (/api/status, the SSE stream, build_status_payload) - so
@@ -293,6 +352,12 @@ def _start_auto_pause_sweep(app: Flask) -> None:
     idle (no mutation ever fires). The sweep invalidates the live cache when
     it pauses anything, so open SSE clients pick up the change on their next
     tick.
+
+    Daily maintenance (backup + auth-attempt pruning) rides the same thread
+    via db.run_daily_maintenance()'s lock-file + marker-file coordination, so
+    at most one worker performs it per day and it never blocks a request.
+    Each Gunicorn worker runs its own copy of this thread; both sweep
+    operations are safe to run concurrently across workers.
     """
     db_path = app.config["DATABASE"]
     interval = config.AUTO_PAUSE_SWEEP_INTERVAL_SECONDS
@@ -300,6 +365,11 @@ def _start_auto_pause_sweep(app: Flask) -> None:
     def _sweep() -> None:
         while True:
             time.sleep(interval)
+            try:
+                with app.app_context():
+                    db.run_daily_maintenance()
+            except Exception:
+                logger.exception("Daily maintenance failed")
             try:
                 paused = queries.pause_overdue_running_sessions(db_path)
                 if paused:

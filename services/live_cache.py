@@ -34,6 +34,13 @@ _digest_revision = None
 _digest_base = None
 _digest_epoch = None
 _user_digest_revisions = {}
+_alltime_leaderboard_revision = None
+_alltime_leaderboard_epoch = None
+_alltime_leaderboard_rows = None
+_alltime_team_categories_revision = None
+_alltime_team_categories_epoch = None
+_alltime_team_categories_rows = None
+_user_alltime_revisions = {}
 
 # The weekly digest's rolling 7-day window (since_ts) slides with wall-clock
 # time even when no one writes, so a cache keyed only on the DB revision goes
@@ -57,12 +64,19 @@ atexit.register(_close_monitor)
 def _clear_snapshots() -> None:
     global _collaboration_revision, _collaboration_snapshot
     global _digest_revision, _digest_base, _digest_epoch
+    global _alltime_leaderboard_revision, _alltime_leaderboard_epoch
+    global _alltime_team_categories_revision, _alltime_team_categories_epoch
     _collaboration_revision = None
     _collaboration_snapshot = None
     _digest_revision = None
     _digest_base = None
     _digest_epoch = None
     _user_digest_revisions.clear()
+    _alltime_leaderboard_revision = None
+    _alltime_leaderboard_rows = None
+    _alltime_team_categories_revision = None
+    _alltime_team_categories_rows = None
+    _user_alltime_revisions.clear()
 
 
 def invalidate() -> None:
@@ -186,4 +200,63 @@ def user_weekly_categories(user_id: int, current_ts: int):
         since_ts = current_ts - config.WEEK_SECONDS
         rows = queries.category_rows_for_user(user_id, current_ts, since_ts=since_ts)
         _user_digest_revisions[user_id] = (current_revision, epoch, rows)
+        return rows
+
+
+def all_time_leaderboard(current_ts: int):
+    """All-time leaderboard rows, cached per DB revision + TTL bucket.
+
+    The all-time aggregate groups over every completed session - with no
+    since_ts bound there is no index range to stop at, so the scan grows
+    linearly with history. /api/leaderboard serves this per request (and the
+    all-time page polls it), so cache it exactly like the weekly digest:
+    recompute on revision change or when the TTL bucket rolls over, which
+    also keeps the live elapsed of running sessions moving.
+    """
+    global _alltime_leaderboard_revision, _alltime_leaderboard_epoch
+    global _alltime_leaderboard_rows
+    with _LOCK:
+        current_revision = _revision_locked()
+        epoch = int(current_ts) // _DIGEST_TTL_SECONDS
+        if (
+            _alltime_leaderboard_revision != current_revision
+            or _alltime_leaderboard_epoch != epoch
+        ):
+            _alltime_leaderboard_rows = queries.leaderboard_rows(current_ts)
+            _alltime_leaderboard_revision = current_revision
+            _alltime_leaderboard_epoch = epoch
+        return _alltime_leaderboard_rows
+
+
+def team_all_time_categories(current_ts: int):
+    """Team all-time category totals, cached like all_time_leaderboard."""
+    global _alltime_team_categories_revision, _alltime_team_categories_epoch
+    global _alltime_team_categories_rows
+    with _LOCK:
+        current_revision = _revision_locked()
+        epoch = int(current_ts) // _DIGEST_TTL_SECONDS
+        if (
+            _alltime_team_categories_revision != current_revision
+            or _alltime_team_categories_epoch != epoch
+        ):
+            _alltime_team_categories_rows = queries.category_rows_for_user(
+                None, current_ts
+            )
+            _alltime_team_categories_revision = current_revision
+            _alltime_team_categories_epoch = epoch
+        return _alltime_team_categories_rows
+
+
+def user_all_time_categories(user_id: int, current_ts: int):
+    """One user's all-time category totals, cached per user + revision +
+    TTL bucket."""
+    with _LOCK:
+        current_revision = _revision_locked()
+        epoch = int(current_ts) // _DIGEST_TTL_SECONDS
+        cached = _user_alltime_revisions.get(user_id)
+        if cached and cached[0] == current_revision and cached[1] == epoch:
+            return cached[2]
+
+        rows = queries.category_rows_for_user(user_id, current_ts)
+        _user_alltime_revisions[user_id] = (current_revision, epoch, rows)
         return rows

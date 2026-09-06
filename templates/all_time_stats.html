@@ -192,8 +192,9 @@
     await Promise.all([loadLeaderboard(), loadStats()]);
   }
 
-  // All-time data changes rarely; poll on a slow, visibility-aware cadence and
-  // refresh immediately when the tab regains focus. The same in-flight guard
+  // All-time data changes rarely (and the server caches the aggregates per
+  // revision), so poll on a slow, visibility-aware cadence and refresh
+  // immediately when the tab regains focus. The same in-flight guard
   // covers the very first load too, so a visibilitychange firing right after
   // page load can't start a second, concurrent refresh racing the first.
   let refreshInFlight = false;
@@ -216,11 +217,18 @@
   const slowConnection = Boolean(connection && (
     connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
   ));
-  setInterval(scheduledRefresh, slowConnection ? 300000 : 30000);
+  // 2 minutes: these endpoints aggregate over all completed sessions, so a
+  // 30s cadence per open tab is disproportionate for data that moves only
+  // when someone tracks time.
+  setInterval(scheduledRefresh, slowConnection ? 300000 : 120000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) scheduledRefresh();
   });
 
-  guardedRefresh();
+  // common.js is deferred (see base.html); wait for DOMContentLoaded so the
+  // real ensureCharts is in place before the first charts paint.
+  document.addEventListener("DOMContentLoaded", () => {
+    guardedRefresh();
+  });
 </script>
 {% endblock %}

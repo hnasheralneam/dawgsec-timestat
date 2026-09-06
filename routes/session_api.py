@@ -175,21 +175,32 @@ def register_routes(app):
             return jsonify({"error": "session state changed"}), 409
 
         ts = db.now_ts()
-        paused_seconds = int(active["paused_seconds"])
-        if active["status"] == "paused" and active["pause_started_ts"] is not None:
-            paused_seconds += ts - int(active["pause_started_ts"])
-
         conn = db.get_db()
+        # Compute the final paused_seconds inside the UPDATE from the row's own
+        # current values rather than writing the snapshot's value absolutely.
+        # A concurrent /api/session/adjust (two devices, or an offline-queue
+        # replay racing this finish) can commit between our snapshot read and
+        # this UPDATE; writing `paused_seconds` absolutely would silently
+        # overwrite that adjust and inflate the session duration - the same
+        # lost-update class adjust's compare-and-set below guards against.
+        # Relative arithmetic lets the adjust's increment survive. The
+        # paused-tail is derived from the stored pause_started_ts, so it stays
+        # correct even if a pause landed after our snapshot was taken.
         cur = conn.execute(
             """
             UPDATE sessions
             SET status = 'completed',
                 end_ts = ?,
-                paused_seconds = ?,
-                pause_started_ts = NULL
+                pause_started_ts = NULL,
+                paused_seconds = paused_seconds
+                    + CASE
+                          WHEN status = 'paused' AND pause_started_ts IS NOT NULL
+                          THEN ? - pause_started_ts
+                          ELSE 0
+                      END
             WHERE id = ? AND status IN ('running', 'paused')
             """,
-            (ts, paused_seconds, active["id"]),
+            (ts, ts, active["id"]),
         )
         if cur.rowcount == 0:
             conn.rollback()

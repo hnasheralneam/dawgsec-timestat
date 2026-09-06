@@ -189,20 +189,25 @@ def register_routes(app):
             return jsonify({"error": "No active session to finish"}), 400
 
         ts = db.now_ts()
-        paused_seconds = int(active["paused_seconds"])
-        if active["status"] == "paused" and active["pause_started_ts"] is not None:
-            paused_seconds += ts - int(active["pause_started_ts"])
-
+        # Same relative-arithmetic finish as the user endpoint: a concurrent
+        # adjust or user pause/resume committing between the snapshot read and
+        # this UPDATE must not be clobbered by an absolute paused_seconds
+        # write (see routes/session_api.py api_finish_session).
         cur = conn.execute(
             """
             UPDATE sessions
             SET status = 'completed',
                 end_ts = ?,
-                paused_seconds = ?,
-                pause_started_ts = NULL
+                pause_started_ts = NULL,
+                paused_seconds = paused_seconds
+                    + CASE
+                          WHEN status = 'paused' AND pause_started_ts IS NOT NULL
+                          THEN ? - pause_started_ts
+                          ELSE 0
+                      END
             WHERE id = ? AND status IN ('running', 'paused')
             """,
-            (ts, paused_seconds, active["id"]),
+            (ts, ts, active["id"]),
         )
         if cur.rowcount == 0:
             conn.rollback()
@@ -223,6 +228,33 @@ def register_routes(app):
             return jsonify({"error": "User not found"}), 404
 
         current_ts = db.now_ts()
+        # Bound the payload: this endpoint used to return every session the
+        # user ever had. Paginate like the rest of the app instead.
+        limit_raw = request.args.get("limit")
+        offset_raw = request.args.get("offset")
+        limit = 500
+        offset = 0
+        if limit_raw is not None:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                return jsonify({"error": "limit must be an integer"}), 400
+            if limit < 1 or limit > 1000:
+                return jsonify({"error": "limit must be between 1 and 1000"}), 400
+        if offset_raw is not None:
+            try:
+                offset = int(offset_raw)
+            except ValueError:
+                return jsonify({"error": "offset must be an integer"}), 400
+            if offset < 0:
+                return jsonify({"error": "offset must be at least 0"}), 400
+
+        total = int(
+            conn.execute(
+                "SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()["count"]
+        )
         rows = conn.execute(
             """
             SELECT
@@ -237,8 +269,9 @@ def register_routes(app):
             FROM sessions s
             WHERE s.user_id = ?
             ORDER BY s.id DESC
+            LIMIT ? OFFSET ?
             """,
-            (user_id,),
+            (user_id, limit, offset),
         ).fetchall()
 
         tasks = []
@@ -259,6 +292,9 @@ def register_routes(app):
             {
                 "user": {"id": target_user["id"], "username": target_user["username"]},
                 "tasks": tasks,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
             }
         )
 
