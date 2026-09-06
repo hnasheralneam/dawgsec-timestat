@@ -182,6 +182,34 @@
   // came with re-fetching on every toggle click).
   window.addEventListener("timestat:theme-changed", () => repaintBarChart(true));
 
+  // Weekly data changes with completed sessions and the rolling 7-day
+  // window; poll every few minutes and on tab refocus so the page stays
+  // fresh without a manual reload.
+  let weeklyRefreshInFlight = false;
+  async function guardedWeeklyRefresh() {
+    if (weeklyRefreshInFlight) return;
+    weeklyRefreshInFlight = true;
+    try {
+      await loadWeeklyLeaderboard();
+    } catch (_err) {
+      // transient failure: next tick or refocus will retry
+    } finally {
+      weeklyRefreshInFlight = false;
+    }
+  }
+  async function scheduledWeeklyRefresh() {
+    if (document.hidden) return;
+    await guardedWeeklyRefresh();
+  }
+  const weeklyConnection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const weeklySlowConnection = Boolean(weeklyConnection && (
+    weeklyConnection.saveData || /(^|-)2g$/.test(weeklyConnection.effectiveType || "")
+  ));
+  setInterval(scheduledWeeklyRefresh, weeklySlowConnection ? 300000 : 180000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduledWeeklyRefresh();
+  });
+
   loadWeeklyLeaderboard().catch(() => {});
 </script>
 {% endblock %}

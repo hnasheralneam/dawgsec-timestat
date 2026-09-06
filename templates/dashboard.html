@@ -1335,6 +1335,30 @@
     if (statusPoll) { clearInterval(statusPoll); statusPoll = null; }
   }
 
+  // Weekly leaderboard + stats should stay fresh even when the SSE
+  // digest misses an update (revision gap, TTL drift, or a transient
+  // disconnect). Poll every few minutes and on tab refocus.
+  let weeklyPoll = null;
+  let weeklyPollVisibleHandler = null;
+  function startWeeklyPolling() {
+    if (weeklyPoll) return;
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const slow = Boolean(connection && (
+      connection.saveData || /(^|-)2g$/.test(connection.effectiveType || "")
+    ));
+    const intervalMs = slow ? 300000 : 180000;
+    async function scheduledWeeklyRefresh() {
+      if (document.hidden) return;
+      try { await loadWeeklyLeaderboard(); } catch (_err) {}
+      try { await loadStats(); } catch (_err) {}
+    }
+    weeklyPoll = setInterval(scheduledWeeklyRefresh, intervalMs);
+    weeklyPollVisibleHandler = () => {
+      if (!document.hidden) scheduledWeeklyRefresh();
+    };
+    document.addEventListener("visibilitychange", weeklyPollVisibleHandler);
+  }
+
   function seedInitialData() {
     applyStatus(initialData.status);
     state.weeklyLeaderboardLoaded = true;
@@ -1394,6 +1418,9 @@
         loadStats().catch(() => {});
       }
     }
+    // Keep the weekly leaderboard fresh even without SSE or when the
+    // digest misses a TTL drift. Poll every few minutes and on refocus.
+    startWeeklyPolling();
   }
 
   bootstrap().catch((err) => {
